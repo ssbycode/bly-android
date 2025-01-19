@@ -19,6 +19,8 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import com.ssbycode.bly.domain.firebase.FirebaseConfig
+import com.ssbycode.bly.domain.firebase.FirebaseManager
 
 @Composable
 fun HomeScreen(
@@ -33,6 +35,9 @@ fun HomeScreen(
 ) {
     val discoveredDevices by viewModel.discoveredDevices.collectAsState(initial = emptyList())
     val connectedDevice by viewModel.connectedDevice.collectAsState(initial = null)
+    val firebaseManager = FirebaseManager()
+    // Inicializando Firebase
+    FirebaseConfig.initialSetup(context)
 
     Column(
         modifier = modifier
@@ -41,7 +46,7 @@ fun HomeScreen(
     ) {
 
         Button(
-            onClick = { viewModel.searchForDevices() },
+            onClick = { firebaseManager.sendSignal(deviceID = "teste", type = "init", data = "", receiver = "enviador") },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Procurar Dispositivos")

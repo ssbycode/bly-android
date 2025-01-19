@@ -75,6 +75,10 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    //lifecycle
+    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
+
+
     // WebRTC
     implementation("io.pristine:libjingle:10839@aar")
 
