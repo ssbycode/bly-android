@@ -5,8 +5,11 @@ import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
 
 data class DeviceConnection(
+    val deviceId: String,
     val connection: PeerConnection,
-    val dataChannel: DataChannel?,
-    val connectionState: IceCandidate,
+    var dataChannel: DataChannel? = null,
+    var connectionState: PeerConnection.IceConnectionState = PeerConnection.IceConnectionState.NEW
+) {
     val isConnected: Boolean
-)
+        get() = connectionState == PeerConnection.IceConnectionState.NEW
+}

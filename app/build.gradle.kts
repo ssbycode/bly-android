@@ -76,10 +76,10 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // WebRTC
-    implementation("io.pristine:libjingle:10839@aar")
+    implementation("io.pristine:libjingle:11139@aar")
 
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    
+
     // Dependências do Firebase necessárias
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
