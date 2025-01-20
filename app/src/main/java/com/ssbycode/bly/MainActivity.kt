@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import android.Manifest
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.firebase.FirebaseApp
 import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import com.ssbycode.bly.presentation.navigation.AppNavigation
 
@@ -25,7 +26,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-
+        // Inicializa o Firebase
+        FirebaseConfig.initialSetup(context = this)
 
         setContent {
             MaterialTheme {

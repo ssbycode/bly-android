@@ -1,6 +1,11 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+
+   // id("com.android.application")
+    id("com.google.gms.google-services")
+
+
 }
 
 android {
@@ -82,11 +87,13 @@ dependencies {
     // WebRTC
     implementation("io.pristine:libjingle:11139@aar")
 
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation(platform("com.google.firebase:firebase-bom:33.8.0"))
+
 
     // Dependências do Firebase necessárias
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-analytics")
     // Outras dependências do projeto...
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")

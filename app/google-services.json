@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "302491075495",
+    "firebase_url": "https://bly-app-default-rtdb.firebaseio.com",
+    "project_id": "bly-app",
+    "storage_bucket": "bly-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:302491075495:android:0f5b59640c5c24339c2c82",
+        "android_client_info": {
+          "package_name": "com.ssbycode.bly"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAArjdTX8f6juAOC25Z99s7sIeWLNet7zs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

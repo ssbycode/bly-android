@@ -36,8 +36,7 @@ fun HomeScreen(
     val discoveredDevices by viewModel.discoveredDevices.collectAsState(initial = emptyList())
     val connectedDevice by viewModel.connectedDevice.collectAsState(initial = null)
     val firebaseManager = FirebaseManager()
-    // Inicializando Firebase
-    FirebaseConfig.initialSetup(context)
+
 
     Column(
         modifier = modifier

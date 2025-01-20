@@ -1,7 +1,7 @@
 [versions]
 agp = "8.2.1"
 #googleWebrtc = "1.0.32006"
-kotlin = "1.9.21"  # Alterado para 1.9.20
+kotlin = "1.9.20"  # Alterado para 1.9.20
 coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
@@ -14,7 +14,7 @@ navigationUiKtx = "2.6.0"
 lifecycle-ktx = "2.6.2"
 coroutines = "1.7.1"
 compose = "1.5.4"
-compose-compiler = "1.5.7"  # Versão compatível com Kotlin 1.9.20
+compose-compiler = "1.5.4"  # Versão compatível com Kotlin 1.9.20
 compose-material3 = "1.1.2"
 activity-compose = "1.8.2"
 navigation-compose = "2.7.5"
