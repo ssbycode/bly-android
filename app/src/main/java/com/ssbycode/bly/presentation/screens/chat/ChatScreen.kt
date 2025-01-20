@@ -33,8 +33,19 @@ fun ChatScreen(
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
-    val messages = remember { mutableStateListOf<ChatMessage>() }
     var messageText by remember { mutableStateOf("") }
+
+    // Coletar mensagens do Flow
+    val messages = realTimeManager.messagesFlow.collectAsState().value
+
+    // Converter as mensagens do formato Message para ChatMessage
+    val chatMessages = messages.values.flatten().map { message ->
+        ChatMessage(
+            text = message.content,
+            isFromMe = message.senderId == realTimeManager.localDeviceID,
+            timestamp = message.timestamp
+        )
+    }.sortedByDescending { it.timestamp }
 
     Column(
         modifier = modifier.fillMaxSize()
@@ -44,7 +55,6 @@ fun ChatScreen(
             navigationIcon = {
                 IconButton(
                     onClick = {
-                        // Tenta voltar na pilha; se não conseguir, vai para a tela inicial
                         if (!navController.popBackStack()) {
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Home.route) { inclusive = true }
@@ -57,7 +67,7 @@ fun ChatScreen(
             }
         )
 
-        // Messages List
+        // Lista de mensagens atualizada
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -65,13 +75,13 @@ fun ChatScreen(
                 .padding(horizontal = 16.dp),
             reverseLayout = true
         ) {
-            items(messages) { message ->
+            items(chatMessages) { message ->
                 ChatMessageItem(message)
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
-        // Message Input
+        // Input de mensagem
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -102,17 +112,10 @@ fun ChatScreen(
                     onClick = {
                         if (messageText.isNotEmpty()) {
                             try {
-                                // Converte a mensagem em bytes e envia
                                 val messageBytes = messageText.toByteArray(Charsets.UTF_8)
-                                realTimeManager.sendMessage(messageBytes, "43C1A3BB-2AC0-4354-AFC8-450C8E7E471B")
-
-                                // Atualiza a UI
-                                messages.add(
-                                    ChatMessage(
-                                        text = messageText,
-                                        isFromMe = true,
-                                        timestamp = System.currentTimeMillis()
-                                    )
+                                realTimeManager.sendMessage(
+                                    messageBytes,
+                                    "235ACEBB-704F-442C-995E-529677E109D7"
                                 )
                                 messageText = ""
                             } catch (e: Exception) {

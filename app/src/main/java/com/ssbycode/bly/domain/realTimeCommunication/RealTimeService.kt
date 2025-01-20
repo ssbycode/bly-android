@@ -2,6 +2,8 @@ package com.ssbycode.bly.domain.realTimeCommunication
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import java.util.concurrent.Executors
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.data.realTimeCommunication.Message
 import com.ssbycode.bly.data.realTimeCommunication.DeviceConnection
+import com.ssbycode.bly.data.realTimeCommunication.TimestampAdapter
 import com.ssbycode.bly.domain.communication.SignalingService
 import com.ssbycode.bly.domain.firebase.SignalType
 import kotlinx.coroutines.flow.update
@@ -116,10 +119,10 @@ class RealTimeService(
 
     override fun sendMessage(data: ByteArray, toRemoteDeviceID: String) {
         Log.i("RealTimeService", """
-            Attempting to send message:
-            - Target Device: $toRemoteDeviceID
-            - Data Size: ${data.size} bytes
-        """.trimIndent())
+        Attempting to send message:
+        - Target Device: $toRemoteDeviceID
+        - Data Size: ${data.size} bytes
+    """.trimIndent())
 
         try {
             val deviceConnection = _connectedDevicesFlow.value[toRemoteDeviceID] ?: run {
@@ -133,34 +136,42 @@ class RealTimeService(
             }
 
             Log.d("RealTimeService", """
-                Connection Status:
-                - ICE State: ${deviceConnection.connectionState}
-                - DataChannel State: ${dataChannel.state()}
-                - Is Connected: ${deviceConnection.isConnected}
-            """.trimIndent())
+            Connection Status:
+            - ICE State: ${deviceConnection.connectionState}
+            - DataChannel State: ${dataChannel.state()}
+            - Is Connected: ${deviceConnection.isConnected}
+        """.trimIndent())
 
             if (dataChannel.state() != DataChannel.State.OPEN) {
                 Log.w("RealTimeService", """
-                    Cannot send message - DataChannel not ready:
-                    - Current State: ${dataChannel.state()}
-                    - Connection State: ${deviceConnection.connectionState}
-                """.trimIndent())
+                Cannot send message - DataChannel not ready:
+                - Current State: ${dataChannel.state()}
+                - Connection State: ${deviceConnection.connectionState}
+            """.trimIndent())
                 return
             }
 
-            val buffer = ByteBuffer.wrap(data)
+            val message = Message(
+                id = UUID.randomUUID().toString(),
+                content = String(data, Charsets.UTF_8),
+                senderId = localDeviceID,
+                timestamp = System.currentTimeMillis(), // Usa milissegundos diretamente
+                forwardedBy = emptyList()
+            )
+
+            // O resto pode continuar igual
+            val jsonString = Gson().toJson(message)
+            val jsonData = jsonString.toByteArray(Charsets.UTF_8)
+
+            // Log para debug
+            Log.d("RealTimeService", "Sending JSON: $jsonString")
+
+            val buffer = ByteBuffer.wrap(jsonData)
             val success = dataChannel.send(DataChannel.Buffer(buffer, false))
 
             if (success) {
                 _messagesFlow.update { messages ->
                     val deviceMessages = messages[toRemoteDeviceID].orEmpty().toMutableList()
-                    val message = Message(
-                        id = UUID.randomUUID().toString(),
-                        content = String(data, Charsets.UTF_8),
-                        senderId = localDeviceID,
-                        timestamp = Date(),
-                        forwardedBy = emptyList()
-                    )
                     deviceMessages.add(message)
                     messages.toMutableMap().apply {
                         put(toRemoteDeviceID, deviceMessages)
@@ -551,26 +562,57 @@ class RealTimeService(
     }
 
     // Private Methods - Message Handling
-    private fun handleIncomingMessage(data: ByteArray, from: String) {
+    private suspend fun handleIncomingMessage(data: ByteArray, deviceID: String) {
         try {
-            val messageString = String(data, Charsets.UTF_8)
-            val message = Message(
-                id = UUID.randomUUID().toString(),
-                content = messageString,
-                senderId = from,
-                timestamp = Date(),
-                forwardedBy = emptyList()
-            )
+            // Criar o Gson customizado com o adapter
+            val gson = GsonBuilder()
+                .registerTypeAdapter(Long::class.java, TimestampAdapter())
+                .create()
 
-            _messagesFlow.update { messages ->
-                val deviceMessages = messages[from].orEmpty().toMutableList()
-                deviceMessages.add(message)
-                messages.toMutableMap().apply {
-                    put(from, deviceMessages)
+            // Converter bytes para string
+            val jsonString = String(data, Charsets.UTF_8)
+            Log.d("RealTimeService", "Received JSON: $jsonString")
+
+            // Usar o gson customizado aqui, não o Gson() padrão
+            val message = gson.fromJson(jsonString, Message::class.java)
+
+            // O resto do código permanece igual
+            if (!isMessageProcessed(message)) {
+                _messagesFlow.update { messages ->
+                    val deviceMessages = messages[deviceID].orEmpty().toMutableList()
+                    deviceMessages.add(message)
+                    messages.toMutableMap().apply {
+                        put(deviceID, deviceMessages)
+                    }
+                }
+
+                if (message.senderId != localDeviceID && !message.forwardedBy.contains(localDeviceID)) {
+                    val updatedMessage = message.copy(
+                        forwardedBy = message.forwardedBy + localDeviceID
+                    )
+                    retransmitMessage(updatedMessage, excludingDeviceID = deviceID)
                 }
             }
         } catch (e: Exception) {
-            Log.e("RealTimeService", "Error handling incoming message", e)
+            Log.e("RealTimeService", "Error decoding message", e)
+        }
+    }
+
+    private fun isMessageProcessed(message: Message): Boolean {
+        // Verificar se a mensagem já existe em alguma conversa
+        return _messagesFlow.value.any { (_, messages) ->
+            messages.any { it.id == message.id }
+        }
+    }
+
+    private fun retransmitMessage(message: Message, excludingDeviceID: String) {
+        // Enviar para todos os dispositivos conectados exceto o remetente
+        _connectedDevicesFlow.value.forEach { (deviceID, connection) ->
+            if (deviceID != excludingDeviceID && connection.isConnected) {
+                val jsonString = Gson().toJson(message)
+                val jsonData = jsonString.toByteArray(Charsets.UTF_8)
+                sendMessage(jsonData, deviceID)
+            }
         }
     }
 

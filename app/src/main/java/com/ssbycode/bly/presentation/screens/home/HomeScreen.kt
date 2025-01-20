@@ -40,7 +40,7 @@ fun HomeScreen(
 ) {
     var showAlert by remember { mutableStateOf(false) }
     var alertMessage by remember { mutableStateOf("") }
-    var newPeerId by remember { mutableStateOf("43C1A3BB-2AC0-4354-AFC8-450C8E7E471B") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
+    var newPeerId by remember { mutableStateOf("235ACEBB-704F-442C-995E-529677E109D7") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
 
     val isConnected = realTimeManager.connectedDevicesFlow.collectAsState().value.isNotEmpty()
     val connectedDevicesCount = realTimeManager.connectedDevicesFlow.collectAsState().value.size

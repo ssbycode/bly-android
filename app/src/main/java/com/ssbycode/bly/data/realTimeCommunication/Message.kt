@@ -6,7 +6,7 @@ data class Message(
     val id: String,
     val content: String,
     val senderId: String,
-    val timestamp: Date,
+    val timestamp: Long,
     val forwardedBy: List<String>
 ) {
     override fun equals(other: Any?): Boolean {
