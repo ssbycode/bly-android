@@ -18,102 +18,140 @@ import androidx.compose.foundation.lazy.items
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavController
+import com.ssbycode.bly.domain.communication.BluetoothCommunication
+import com.ssbycode.bly.domain.communication.RealTimeCommunication
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
+import com.ssbycode.bly.presentation.screens.chat.ChatScreen
 
 @Composable
 fun HomeScreen(
-    onNavigateToOther: () -> Unit,
-    modifier: Modifier = Modifier,
-    bluetoothManager: BluetoothManager,
-    viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.Factory(bluetoothManager)
-    ),
-    context: Context
-
+    realTimeManager: RealTimeCommunication,
+    bluetoothManager: BluetoothCommunication,
+    navController: NavController,
+    modifier: Modifier = Modifier
 ) {
-    val discoveredDevices by viewModel.discoveredDevices.collectAsState(initial = emptyList())
-    val connectedDevice by viewModel.connectedDevice.collectAsState(initial = null)
+    var showAlert by remember { mutableStateOf(false) }
+    var showChat by remember { mutableStateOf(false) }
+    var alertMessage by remember { mutableStateOf("") }
+    var newPeerId by remember { mutableStateOf("020047A9-B62F-43D6-A430-7998E3A4A0FA") }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
+    val isConnected = realTimeManager.connectedDevicesFlow.collectAsState().value.isNotEmpty()
+    val connectedDevicesCount = realTimeManager.connectedDevicesFlow.collectAsState().value.size
 
-        Button(
-            onClick = { viewModel.searchForDevices() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Procurar Dispositivos")
-        }
+    val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        LazyColumn {
-            items(discoveredDevices) { device ->
-                DeviceItem(
-                    device = device,
-                    context = context,
-                    isConnected = device.address == connectedDevice?.address,
-                    onClick = { /* Implementar conexão */ }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceItem(
-    device: BluetoothDevice,
-    context: Context,
-    isConnected: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Row(
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = SpaceBetween,
-            verticalAlignment = CenterVertically
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
-                Text(
-                    text = if (checkBluetoothPermission(context)) {
-                        device.name ?: "Dispositivo Desconhecido"
+            // Header
+            Text(
+                text = "Bly",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Main Button
+            Button(
+                onClick = {
+                    if (isConnected) {
+                        showChat = true
                     } else {
-                        "Dispositivo Desconhecido"
-                    },
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = if (checkBluetoothPermission(context)) {
-                        device.address
-                    } else {
-                        "Endereço indisponível"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                        if (newPeerId.isNotEmpty()) {
+                            showChat = true
+                            realTimeManager.connectTo(newPeerId)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(text = titleBubbleButton)
             }
-            if (isConnected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Conectado",
-                    tint = MaterialTheme.colorScheme.primary
+
+            // Connection Controls
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = newPeerId,
+                    onValueChange = { newPeerId = it },
+                    label = { Text("Novo dispositivo") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(0.6f),
+                    singleLine = true
                 )
+
+                if (isConnected) {
+                    Button(
+                        onClick = {
+                            realTimeManager.disconnectAll()
+                            showChat = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Desconectar")
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Local ID: ${realTimeManager.localDeviceID.take(8)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "Conexões: $connectedDevicesCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
-}
 
-private fun checkBluetoothPermission(context: Context): Boolean {
-    return ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.BLUETOOTH_CONNECT
-    ) == PackageManager.PERMISSION_GRANTED
+    // Alert Dialog
+    if (showAlert) {
+        AlertDialog(
+            onDismissRequest = { showAlert = false },
+            title = { Text("Connection Status") },
+            text = { Text(alertMessage) },
+            confirmButton = {
+                TextButton(onClick = { showAlert = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // Chat Screen
+    if (showChat) {
+        navController.navigate("chat")
+    }
+
+    // Observe connection changes
+    LaunchedEffect(isConnected) {
+        showChat = isConnected
+    }
 }

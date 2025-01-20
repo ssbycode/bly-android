@@ -21,7 +21,7 @@ import java.util.UUID
 class RealTimeService(
     private val context: Context,
     private val signalingService: SignalingService,
-    override val localDeviceID: String = UUID.randomUUID().toString()
+    override val localDeviceID: String
 ) : RealTimeCommunication {
     private lateinit var peerConnectionFactory: PeerConnectionFactory
     private val executor = Executors.newSingleThreadExecutor()

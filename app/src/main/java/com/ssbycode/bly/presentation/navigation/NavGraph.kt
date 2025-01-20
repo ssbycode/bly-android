@@ -11,6 +11,8 @@ import android.content.Context
 import android.bluetooth.BluetoothAdapter
 import androidx.compose.runtime.remember
 import com.ssbycode.bly.data.bluetooth.BluetoothCommunicationImpl
+import com.ssbycode.bly.domain.communication.BluetoothCommunication
+import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import android.bluetooth.BluetoothManager as AndroidBluetoothManager
 
 sealed class Screen(val route: String) {
@@ -20,33 +22,26 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun AppNavigation(
-    context: Context
+    context: Context,
+    bluetoothManager: BluetoothCommunication,
+    realTimeManager: RealTimeCommunication
 ) {
     val navController = rememberNavController()
 
-    // Criando instância do BluetoothManager
-    val bluetoothManager = remember {
-        val bluetoothAdapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as AndroidBluetoothManager).adapter
-        val bluetoothService = BluetoothCommunicationImpl(bluetoothAdapter)
-        BluetoothManager(context, bluetoothService)
-    }
-
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Home.route
-    ) {
-        composable(Screen.Home.route) {
+    NavHost(navController = navController, startDestination = "home") {
+        composable("home") {
             HomeScreen(
-                onNavigateToOther = {
-                    navController.navigate(Screen.Chat.route)
-                },
+                realTimeManager = realTimeManager,
                 bluetoothManager = bluetoothManager,
-                context = context
+                navController = navController
             )
         }
-
-        composable(Screen.Chat.route) {
-            ChatScreen(navController = navController)
+        composable("chat") {
+            ChatScreen(
+                onDismiss = { navController.navigateUp() },
+                realTimeManager = realTimeManager,
+                navController = navController
+            )
         }
     }
 }
