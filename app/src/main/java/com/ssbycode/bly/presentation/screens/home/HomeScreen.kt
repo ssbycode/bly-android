@@ -22,10 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
+import com.ssbycode.bly.domain.firebase.FirebaseConfig
+import com.ssbycode.bly.domain.firebase.FirebaseManager
 import androidx.navigation.NavController
 import com.ssbycode.bly.domain.communication.BluetoothCommunication
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
+import com.ssbycode.bly.presentation.navigation.Screen
 import com.ssbycode.bly.presentation.screens.chat.ChatScreen
 
 @Composable
@@ -36,7 +39,6 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     var showAlert by remember { mutableStateOf(false) }
-    var showChat by remember { mutableStateOf(false) }
     var alertMessage by remember { mutableStateOf("") }
     var newPeerId by remember { mutableStateOf("020047A9-B62F-43D6-A430-7998E3A4A0FA") }
 
@@ -63,10 +65,9 @@ fun HomeScreen(
             Button(
                 onClick = {
                     if (isConnected) {
-                        showChat = true
+                        navController.navigate(Screen.Chat.route) // Navega para a tela de chat diretamente
                     } else {
                         if (newPeerId.isNotEmpty()) {
-                            showChat = true
                             realTimeManager.connectTo(newPeerId)
                         }
                     }
@@ -98,7 +99,6 @@ fun HomeScreen(
                     Button(
                         onClick = {
                             realTimeManager.disconnectAll()
-                            showChat = false
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
@@ -143,15 +143,5 @@ fun HomeScreen(
                 }
             }
         )
-    }
-
-    // Chat Screen
-    if (showChat) {
-        navController.navigate("chat")
-    }
-
-    // Observe connection changes
-    LaunchedEffect(isConnected) {
-        showChat = isConnected
     }
 }

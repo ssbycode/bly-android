@@ -2,8 +2,11 @@ package com.ssbycode.bly.domain.firebase
 
 import com.ssbycode.bly.domain.communication.SignalingService
 import com.google.firebase.database.*
-import java.util.*
 import kotlin.collections.HashSet
+import kotlinx.coroutines.*
+
+private val cleanupScope = CoroutineScope(Dispatchers.Default)
+
 
 // Enums
 enum class SignalType(val value: String) {
@@ -33,6 +36,7 @@ sealed class SignalError : Exception() {
     object InvalidSignal : SignalError()
     object Timeout : SignalError()
 }
+
 
 class FirebaseManager(
     private val signalTimeout: Long = 60 // em segundos
@@ -119,7 +123,12 @@ class FirebaseManager(
         processingSignals.clear()
     }
 
-    private fun createSignal(deviceID: String, type: String, data: String, receiver: String): Map<String, Any> {
+    private fun createSignal(
+        deviceID: String,
+        type: String,
+        data: String,
+        receiver: String
+    ): Map<String, Any> {
         val currentTimestamp = System.currentTimeMillis()
         val timeoutMilliseconds = signalTimeout * 1000
         val expiresAt = currentTimestamp + timeoutMilliseconds
@@ -146,7 +155,8 @@ class FirebaseManager(
             processingSignals.contains(snapshot.key) ||
             signal["type"] !is String ||
             signal["data"] !is String ||
-            signal["sender"] !is String) {
+            signal["sender"] !is String
+        ) {
             println("❌ Invalid signal format or signal already being processed")
             return
         }
@@ -164,7 +174,8 @@ class FirebaseManager(
                 onSignalReceived(type, data, sender) { success ->
                     try {
                         val signalType = SignalType.valueOf(type.uppercase())
-                        val finalStatus = if (success) signalType.finalStatus else SignalStatus.FAILED
+                        val finalStatus =
+                            if (success) signalType.finalStatus else SignalStatus.FAILED
                         updateSignalStatus(snapshot, finalStatus)
                     } finally {
                         processingSignals.remove(snapshot.key)
@@ -227,13 +238,22 @@ class FirebaseManager(
         statusRef.addChildEventListener(valueEventListener)
     }
 
+    //    private fun setupSignalCleanup() {
+//        Timer().scheduleAtFixedRate(object : TimerTask() {
+//            override fun run() {
+//                cleanupExpiredSignals()
+//            }
+//        }, 0, 300000) // 300 segundos = 5 minutos
+//    }
     private fun setupSignalCleanup() {
-        Timer().scheduleAtFixedRate(object : TimerTask() {
-            override fun run() {
+        cleanupScope.launch {
+            while (isActive) {
                 cleanupExpiredSignals()
+                delay(300000) // 5 minutos
             }
-        }, 0, 300000) // 300 segundos = 5 minutos
+        }
     }
+
 
     private fun cleanupExpiredSignals() {
         val currentTimestamp = System.currentTimeMillis()

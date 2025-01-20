@@ -1,6 +1,7 @@
 package com.ssbycode.bly.presentation.screens.chat
 
 import android.text.Layout
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeManager
+import com.ssbycode.bly.presentation.navigation.Screen
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -26,7 +28,6 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    onDismiss: () -> Unit,
     realTimeManager: RealTimeCommunication,
     navController: NavController,
     modifier: Modifier = Modifier
@@ -37,17 +38,20 @@ fun ChatScreen(
     Column(
         modifier = modifier.fillMaxSize()
     ) {
-        // Top Bar
         TopAppBar(
             title = { Text("Chat") },
             navigationIcon = {
-                IconButton(onClick = { navController.navigateUp() }) {
+                IconButton(
+                    onClick = {
+                        // Tenta voltar na pilha; se não conseguir, vai para a tela inicial
+                        if (!navController.popBackStack()) {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Home.route) { inclusive = true }
+                            }
+                        }
+                    }
+                ) {
                     Icon(Icons.Default.ArrowBack, "Voltar")
-                }
-            },
-            actions = {
-                IconButton(onClick = { /* Implementar menu */ }) {
-                    Icon(Icons.Default.MoreVert, "Mais opções")
                 }
             }
         )

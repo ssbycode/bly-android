@@ -28,17 +28,16 @@ fun AppNavigation(
 ) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = "home") {
-        composable("home") {
+    NavHost(navController = navController, startDestination = Screen.Home.route) {
+        composable(Screen.Home.route) {
             HomeScreen(
                 realTimeManager = realTimeManager,
                 bluetoothManager = bluetoothManager,
                 navController = navController
             )
         }
-        composable("chat") {
+        composable(Screen.Chat.route) {
             ChatScreen(
-                onDismiss = { navController.navigateUp() },
                 realTimeManager = realTimeManager,
                 navController = navController
             )

@@ -1,6 +1,11 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+
+   // id("com.android.application")
+    id("com.google.gms.google-services")
+
+
 }
 
 android {
@@ -32,6 +37,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+        freeCompilerArgs += listOf(
+            "-Xjvm-default=all",
+            "-opt-in=kotlin.RequiresOptIn"
+        )
     }
     buildFeatures {
         viewBinding = true
@@ -67,23 +76,25 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.runtime)
 
-    // Adicione estas duas linhas
-    implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:${libs.versions.coroutines.get()}")
+
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
-
+    //Lifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:${libs.versions.lifecycle.ktx.get()}")
     // WebRTC
     implementation("io.pristine:libjingle:11139@aar")
+    //Firebase
+    implementation(platform("com.google.firebase:firebase-bom:32.7.1"))
 
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
 
     // Dependências do Firebase necessárias
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
-    // Outras dependências do projeto...
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("com.google.firebase:firebase-analytics")
 }

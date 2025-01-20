@@ -9,6 +9,8 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.firebase.FirebaseApp
+import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -47,6 +49,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        FirebaseConfig.initialSetup(context = this)
+
         // Verificar e solicitar permissões
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             bluetoothPermissionLauncher.launch(
@@ -68,7 +72,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                // Mostrar tela de carregamento ou a navegação baseado no estado dos serviços
+                // Verifica se os serviços estão inicializados antes de carregar a navegação
                 if (servicesInitialized) {
                     AppNavigation(
                         context = this,
@@ -76,7 +80,7 @@ class MainActivity : ComponentActivity() {
                         realTimeManager = realTimeManager
                     )
                 } else {
-                    LoadingScreen()
+                    LoadingScreen() // Tela de carregamento enquanto inicializa
                 }
             }
         }
