@@ -11,5 +11,7 @@ data class DeviceConnection(
     var connectionState: PeerConnection.IceConnectionState = PeerConnection.IceConnectionState.NEW
 ) {
     val isConnected: Boolean
-        get() = connectionState == PeerConnection.IceConnectionState.NEW
+        get() = dataChannel?.state() == DataChannel.State.OPEN &&
+                (connectionState == PeerConnection.IceConnectionState.CONNECTED ||
+                        connectionState == PeerConnection.IceConnectionState.COMPLETED)
 }

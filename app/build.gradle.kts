@@ -88,7 +88,9 @@ dependencies {
     //Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:${libs.versions.lifecycle.ktx.get()}")
     // WebRTC
-    implementation("io.pristine:libjingle:11139@aar")
+//    implementation("io.pristine:libjingle:11139@aar")
+//    implementation(libs.google.webrtc)
+    implementation("org.webrtc:google-webrtc:1.0.30039@aar")
     //Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.1"))
 

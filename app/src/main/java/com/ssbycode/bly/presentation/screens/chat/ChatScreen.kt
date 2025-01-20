@@ -1,6 +1,7 @@
 package com.ssbycode.bly.presentation.screens.chat
 
 import android.text.Layout
+import android.util.Log
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -100,14 +101,23 @@ fun ChatScreen(
                 IconButton(
                     onClick = {
                         if (messageText.isNotEmpty()) {
-                            messages.add(
-                                ChatMessage(
-                                    text = messageText,
-                                    isFromMe = true,
-                                    timestamp = System.currentTimeMillis()
+                            try {
+                                // Converte a mensagem em bytes e envia
+                                val messageBytes = messageText.toByteArray(Charsets.UTF_8)
+                                realTimeManager.sendMessage(messageBytes, "43C1A3BB-2AC0-4354-AFC8-450C8E7E471B")
+
+                                // Atualiza a UI
+                                messages.add(
+                                    ChatMessage(
+                                        text = messageText,
+                                        isFromMe = true,
+                                        timestamp = System.currentTimeMillis()
+                                    )
                                 )
-                            )
-                            messageText = ""
+                                messageText = ""
+                            } catch (e: Exception) {
+                                Log.e("Chat", "Erro ao enviar mensagem: ${e.message}")
+                            }
                         }
                     }
                 ) {

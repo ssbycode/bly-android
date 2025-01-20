@@ -86,9 +86,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun convertToUUID(androidId: String): String {
+        // Garantir que temos 32 caracteres preenchendo com zeros se necessário
+        val paddedId = androidId.padEnd(32, '0')
+
+        // Quebrar em 5 grupos conforme padrão UUID
+        val group1 = paddedId.substring(0, 8)           // 8 caracteres
+        val group2 = paddedId.substring(8, 12)          // 4 caracteres
+        val group3 = paddedId.substring(12, 16)         // 4 caracteres
+        val group4 = paddedId.substring(16, 20)         // 4 caracteres
+        val group5 = paddedId.substring(20, 32)         // 12 caracteres
+
+        // Montar o UUID no formato padrão
+        return "$group1-$group2-$group3-$group4-$group5"
+    }
+
     private fun initializeServices() {
         try {
-            localDeviceID = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).uppercase()
+            val localDeviceID = convertToUUID(androidId)
+
+            println("** LOCAL ID")
+            println(localDeviceID)
             signalingService = FirebaseManager()
 
             realTimeManager = RealTimeService(
