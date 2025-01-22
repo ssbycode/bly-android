@@ -9,7 +9,6 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
-import com.google.firebase.FirebaseApp
 import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,15 +20,16 @@ import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.domain.communication.SignalingService
 import com.ssbycode.bly.domain.firebase.FirebaseManager
 import com.ssbycode.bly.presentation.navigation.AppNavigation
-import com.ssbycode.bly.domain.realTimeCommunication.RealTimeManager
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
 import com.ssbycode.bly.presentation.screens.LoadingScreen
 
 class MainActivity : ComponentActivity() {
-    private lateinit var localDeviceID: String
+
     private lateinit var signalingService: SignalingService
+    private lateinit var realTimeService: RealTimeService
+    private lateinit var realTimeViewModel: RealTimeViewModel
     private lateinit var bluetoothManager: BluetoothCommunication
-    private lateinit var realTimeManager: RealTimeCommunication
 
     // Adicione um estado para controlar quando os serviços estão prontos
     private var servicesInitialized by mutableStateOf(false)
@@ -50,7 +50,51 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         FirebaseConfig.initialSetup(context = this)
+        checkPermissionBluetooth()
 
+        setContent {
+            MaterialTheme {
+                // Verifica se os serviços estão inicializados antes de carregar a navegação
+                if (servicesInitialized) {
+                    AppNavigation(
+                        context = this,
+                        bluetoothManager = bluetoothManager,
+                        realTimeViewModel = realTimeViewModel
+                    )
+                } else {
+                    LoadingScreen()
+                }
+            }
+        }
+    }
+
+    private fun initializeServices() {
+        try {
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).uppercase()
+            val localDeviceID = convertToUUID(androidId)
+
+            signalingService = FirebaseManager()
+
+            realTimeService = RealTimeService(
+                context = this,
+                signalingService = signalingService,
+                localDeviceID = localDeviceID
+            )
+
+            realTimeViewModel = RealTimeViewModel(
+                service = realTimeService
+            )
+
+            bluetoothManager = BluetoothService(
+                context = this,
+                realTimeService = realTimeService
+            )
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error initializing services", e)
+        }
+    }
+
+    private fun checkPermissionBluetooth() {
         // Verificar e solicitar permissões
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             bluetoothPermissionLauncher.launch(
@@ -69,21 +113,6 @@ class MainActivity : ComponentActivity() {
                 )
             )
         }
-
-        setContent {
-            MaterialTheme {
-                // Verifica se os serviços estão inicializados antes de carregar a navegação
-                if (servicesInitialized) {
-                    AppNavigation(
-                        context = this,
-                        bluetoothManager = bluetoothManager,
-                        realTimeManager = realTimeManager
-                    )
-                } else {
-                    LoadingScreen() // Tela de carregamento enquanto inicializa
-                }
-            }
-        }
     }
 
     private fun convertToUUID(androidId: String): String {
@@ -99,30 +128,5 @@ class MainActivity : ComponentActivity() {
 
         // Montar o UUID no formato padrão
         return "$group1-$group2-$group3-$group4-$group5"
-    }
-
-    private fun initializeServices() {
-        try {
-            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).uppercase()
-            val localDeviceID = convertToUUID(androidId)
-
-            println("** LOCAL ID")
-            println(localDeviceID)
-            signalingService = FirebaseManager()
-
-            realTimeManager = RealTimeService(
-                context = this,
-                signalingService = signalingService,
-                localDeviceID = localDeviceID
-            )
-
-            bluetoothManager = BluetoothService(
-                context = this,
-                realTimeService = realTimeManager
-            )
-
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error initializing services", e)
-        }
     }
 }

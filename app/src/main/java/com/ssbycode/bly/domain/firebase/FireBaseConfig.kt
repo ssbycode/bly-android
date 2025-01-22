@@ -13,8 +13,8 @@ object FirebaseConfig {
 
     // Função de configuração
     fun initialSetup(context: Context) {
-        Log.i("FirebaseConfig", "Configurando Firebase Android")
-        FirebaseApp.initializeApp(context)  // Passa o contexto válido
+        Log.i("Firebase", "Configurando Firebase...")
+        FirebaseApp.initializeApp(context)
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
         database.setPersistenceEnabled(PERSISTENCE_ENABLED)
     }

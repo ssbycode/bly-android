@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import com.ssbycode.bly.data.bluetooth.BluetoothCommunicationImpl
 import com.ssbycode.bly.domain.communication.BluetoothCommunication
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
 import android.bluetooth.BluetoothManager as AndroidBluetoothManager
 
 sealed class Screen(val route: String) {
@@ -24,21 +25,21 @@ sealed class Screen(val route: String) {
 fun AppNavigation(
     context: Context,
     bluetoothManager: BluetoothCommunication,
-    realTimeManager: RealTimeCommunication
+    realTimeViewModel: RealTimeViewModel
 ) {
     val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
         composable(Screen.Home.route) {
             HomeScreen(
-                realTimeManager = realTimeManager,
+                realTimeViewModel = realTimeViewModel,
                 bluetoothManager = bluetoothManager,
                 navController = navController
             )
         }
         composable(Screen.Chat.route) {
             ChatScreen(
-                realTimeManager = realTimeManager,
+                realTimeViewModel = realTimeViewModel,
                 navController = navController
             )
         }

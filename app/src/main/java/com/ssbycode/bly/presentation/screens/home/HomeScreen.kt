@@ -28,22 +28,24 @@ import androidx.navigation.NavController
 import com.ssbycode.bly.domain.communication.BluetoothCommunication
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
 import com.ssbycode.bly.presentation.navigation.Screen
 import com.ssbycode.bly.presentation.screens.chat.ChatScreen
+import kotlinx.coroutines.flow.take
 
 @Composable
 fun HomeScreen(
-    realTimeManager: RealTimeCommunication,
+    realTimeViewModel: RealTimeViewModel,
     bluetoothManager: BluetoothCommunication,
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
     var showAlert by remember { mutableStateOf(false) }
     var alertMessage by remember { mutableStateOf("") }
-    var newPeerId by remember { mutableStateOf("235ACEBB-704F-442C-995E-529677E109D7") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
+    var newPeerId by remember { mutableStateOf("959298FD-6A7C-494F-B4B0-9417CCEA626D") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
 
-    val isConnected = realTimeManager.connectedDevicesFlow.collectAsState().value.isNotEmpty()
-    val connectedDevicesCount = realTimeManager.connectedDevicesFlow.collectAsState().value.size
+    val isConnected = realTimeViewModel.connectedDevices.collectAsState().value.isNotEmpty()
+    val connectedDevicesCount = realTimeViewModel.connectedDevices.collectAsState().value.size
 
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
@@ -68,7 +70,7 @@ fun HomeScreen(
                         navController.navigate(Screen.Chat.route) // Navega para a tela de chat diretamente
                     } else {
                         if (newPeerId.isNotEmpty()) {
-                            realTimeManager.connectTo(newPeerId)
+                            realTimeViewModel.connectTo(newPeerId)
                         }
                     }
                 },
@@ -98,7 +100,7 @@ fun HomeScreen(
                 if (isConnected) {
                     Button(
                         onClick = {
-                            realTimeManager.disconnectAll()
+                            realTimeViewModel.disconnectAll()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
@@ -116,7 +118,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Local ID: ${realTimeManager.localDeviceID.take(8)}",
+                        text = "Local ID: ${realTimeViewModel.localDeviceID}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

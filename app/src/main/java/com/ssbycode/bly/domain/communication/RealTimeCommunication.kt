@@ -12,6 +12,5 @@ interface RealTimeCommunication {
     fun connectTo(remoteDeviceID: String)
     fun disconnectFrom(remoteDeviceID: String)
     fun disconnectAll()
-    fun sendMessage(data: ByteArray, toRemoteDeviceID: String)
     fun broadcast(data: ByteArray)
 }

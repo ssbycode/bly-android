@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -19,8 +21,9 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.ssbycode.bly.data.realTimeCommunication.Message
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
-import com.ssbycode.bly.domain.realTimeCommunication.RealTimeManager
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
 import com.ssbycode.bly.presentation.navigation.Screen
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -29,29 +32,21 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    realTimeManager: RealTimeCommunication,
+    realTimeViewModel: RealTimeViewModel,
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
     var messageText by remember { mutableStateOf("") }
-
-    // Coletar mensagens do Flow
-    val messages = realTimeManager.messagesFlow.collectAsState().value
-
-    // Converter as mensagens do formato Message para ChatMessage
-    val chatMessages = messages.values.flatten().map { message ->
-        ChatMessage(
-            text = message.content,
-            isFromMe = message.senderId == realTimeManager.localDeviceID,
-            timestamp = message.timestamp
-        )
-    }.sortedByDescending { it.timestamp }
+    // Collect states
+    val connectedDevices by realTimeViewModel.connectedDevices.collectAsState()
+    val sendButtonEnabled = messageText.isNotEmpty() && connectedDevices.isNotEmpty()
 
     Column(
         modifier = modifier.fillMaxSize()
     ) {
+        // Header
         TopAppBar(
-            title = { Text("Chat") },
+            title = { Text("Bly Chat 🫧") },
             navigationIcon = {
                 IconButton(
                     onClick = {
@@ -67,26 +62,47 @@ fun ChatScreen(
             }
         )
 
-        // Lista de mensagens atualizada
+        // Connected Users
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(connectedDevices.toList()) { deviceId ->
+                UserChip(deviceId = deviceId)
+            }
+        }
+
+        // Messages
+        val messagesWithInfo = realTimeViewModel.messagesWithSequenceInfo
+
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            reverseLayout = true
+            reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(chatMessages) { message ->
-                ChatMessageItem(message)
-                Spacer(modifier = Modifier.height(8.dp))
+            items(
+                items = messagesWithInfo,
+                key = { it.first.id }
+            ) { (message, isLastInSequence) ->
+                ChatMessageItem(
+                    message = message,
+                    isLastInSequence = isLastInSequence
+                )
             }
         }
 
-        // Input de mensagem
+        // Message Input
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            shape = RoundedCornerShape(20.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -100,7 +116,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 8.dp),
-                    placeholder = { Text("Digite sua mensagem...") },
+                    placeholder = { Text("Mensagem") },
                     colors = TextFieldDefaults.colors(
                         unfocusedContainerColor = Color.Transparent,
                         focusedContainerColor = Color.Transparent
@@ -110,24 +126,21 @@ fun ChatScreen(
 
                 IconButton(
                     onClick = {
-                        if (messageText.isNotEmpty()) {
-                            try {
-                                val messageBytes = messageText.toByteArray(Charsets.UTF_8)
-                                realTimeManager.sendMessage(
-                                    messageBytes,
-                                    "235ACEBB-704F-442C-995E-529677E109D7"
-                                )
-                                messageText = ""
-                            } catch (e: Exception) {
-                                Log.e("Chat", "Erro ao enviar mensagem: ${e.message}")
-                            }
-                        }
-                    }
+                        Log.i("ChatScreen", "Sending message: $messageText")
+//                        if (messageText.isNotEmpty()) {
+                        realTimeViewModel.broadcast(messageText)
+                        messageText = ""
+//                        }
+                    },
+                    enabled = sendButtonEnabled
                 ) {
                     Icon(
-                        Icons.Default.Send,
+                        imageVector = Icons.Default.Send,
                         contentDescription = "Enviar",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (sendButtonEnabled)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                     )
                 }
             }
@@ -136,18 +149,34 @@ fun ChatScreen(
 }
 
 @Composable
-private fun ChatMessageItem(message: ChatMessage) {
-    val alignment = if (message.isFromMe) Alignment.End else Alignment.Start
+private fun UserChip(deviceId: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer
+    ) {
+        Text(
+            text = deviceId.take(4),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
 
+@Composable
+private fun ChatMessageItem(
+    message: Message,
+    isLastInSequence: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        horizontalAlignment = if (message.isFromMe) Alignment.End else Alignment.Start
+        horizontalAlignment = if (message.isFromCurrentUser)
+            Alignment.End else Alignment.Start
     ) {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isFromMe)
+                containerColor = if (message.isFromCurrentUser)
                     MaterialTheme.colorScheme.primary
                 else
                     MaterialTheme.colorScheme.surfaceVariant
@@ -155,27 +184,23 @@ private fun ChatMessageItem(message: ChatMessage) {
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                text = message.text,
+                text = message.content,
                 modifier = Modifier.padding(12.dp),
-                color = if (message.isFromMe)
+                color = if (message.isFromCurrentUser)
                     MaterialTheme.colorScheme.onPrimary
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        Text(
-            text = SimpleDateFormat("HH:mm", Locale.getDefault())
-                .format(Date(message.timestamp)),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+        if (isLastInSequence) {
+            Text(
+                text = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    .format(Date((message.timestamp * 1000).toLong())),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
     }
 }
-
-data class ChatMessage(
-    val text: String,
-    val isFromMe: Boolean,
-    val timestamp: Long
-)

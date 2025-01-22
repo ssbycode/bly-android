@@ -1,8 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-
-   // id("com.android.application")
+    kotlin("plugin.serialization") version "1.9.20"
+    // id("com.android.application")
     id("com.google.gms.google-services")
 
 
@@ -78,8 +78,9 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:${libs.versions.coroutines.get()}")
-
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.firebase.dataconnect)
 
 
     androidTestImplementation(libs.androidx.junit)

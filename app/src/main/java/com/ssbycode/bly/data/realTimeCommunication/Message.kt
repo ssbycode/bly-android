@@ -1,21 +1,15 @@
 package com.ssbycode.bly.data.realTimeCommunication
 
-import java.util.Date
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import java.util.UUID
 
+@Serializable
 data class Message(
-    val id: String,
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long = System.currentTimeMillis(),
     val content: String,
     val senderId: String,
-    val timestamp: Long,
-    val forwardedBy: List<String>
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is Message) return false
-        return id == other.id
-    }
-
-    override fun hashCode(): Int {
-        return id.hashCode()
-    }
-}
+    @Transient
+    var isFromCurrentUser: Boolean = true
+)
