@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun BubbleButton(
@@ -139,7 +140,7 @@ fun BubbleButton(
                 }
             },
         shape = CircleShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+       // border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
             contentColor = Color.White.copy(alpha = 0.8f)
@@ -147,10 +148,12 @@ fun BubbleButton(
     ) {
         Text(
             text = text,
+            fontSize = 18.sp,
+            color = Color.White,
             modifier = Modifier
-                .offset(y = with(density) { floatOffset.dp * 2 })
+                .offset(y = floatOffset.dp * 2)
                 .graphicsLayer {
-                    alpha = 0.9f - (pulseScale - 1f) * 2f
+                  //  alpha = 0.9f - (pulseScale - 1f) * 2f
                 }
         )
     }

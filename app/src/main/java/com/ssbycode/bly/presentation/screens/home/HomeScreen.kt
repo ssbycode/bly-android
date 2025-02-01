@@ -67,9 +67,13 @@ fun HomeScreen(
         ) {
             // Header
             Text(
+
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center, // Alinha o texto à direita
                 text = "Bly",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
+
             )
 
             // Main Button
