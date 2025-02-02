@@ -88,11 +88,13 @@ fun HomeScreen(
                     }
                 },
                 modifier = Modifier
+                    .padding(top = 250.dp)
                     .fillMaxWidth()
-                    .height(250.dp),
+                    .height(200.dp),
                 text = titleBubbleButton,
                 bubbleColor = Color(0x7E2196F3), // Mais transparente
-                shineColor = Color.White.copy(alpha = 0.3f)
+                shineColor = Color.White.copy(alpha = 0.3f),
+
             )
 
             // Connection Controls

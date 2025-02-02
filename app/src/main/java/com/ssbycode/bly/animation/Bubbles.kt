@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -35,7 +36,7 @@ fun BubbleAnimation(modifier: Modifier = Modifier) {
             repeat(30) { createNewBubble(bubbles, animationTime) }
 
             while (true) {
-                delay(300)
+                delay(1000)
                 bubbles.removeAll { bubble ->
                     (animationTime - bubble.startTime) > bubble.duration
                 }
@@ -68,52 +69,96 @@ fun BubbleAnimation(modifier: Modifier = Modifier) {
 
             // Desenho da sombra
             drawCircle(
+                style = Stroke(width = 0.8.dp.toPx()),
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0x552196F3), Color(0x102196F3)),
+                    colors = listOf(
+                        Color.Transparent,
+                        Color(0.8f, 0.7f, 1.0f).copy(alpha = 0.15f),  // Lilás
+                        Color(0.7f, 0.6f, 0.95f).copy(alpha = 0.1f)    // Roxo
+                    ),
                     center = Offset(bubbleRadius/2, bubbleRadius/2),
-                    radius = bubbleRadius * 1.2f
+                    radius = bubbleRadius * 0.6f
                 ),
-                center = Offset(x + shadowOffset, y + shadowOffset),
-                radius = bubbleRadius,
-                alpha = 0.3f * (1 - easedProgress)
+                center = Offset(x, y),
+                radius = bubbleRadius * 0.96f
             )
 
-            // Desenho da bolha principal
+            // Corpo principal branco
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.98f),
+                        Color.White.copy(alpha = 0.95f),
+                        Color.White.copy(alpha = 0.9f)
+                    ),
+                    center = Offset(bubbleRadius/2, bubbleRadius/2),
+                    radius = bubbleRadius * 0.6f
+                ),
+                center = Offset(x, y),
+                radius = bubbleRadius
+            )
+
+            // Borda roxo-lilás transparente
+            drawCircle(
+                style = Stroke(width = 1.2.dp.toPx()),
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0.85f, 0.75f, 1.0f).copy(alpha = 0.35f), // Lilás claro
+                        Color(0.75f, 0.65f, 0.97f).copy(alpha = 0.25f),// Roxo médio
+                        Color(0.65f, 0.55f, 0.92f).copy(alpha = 0.15f) // Roxo escuro
+                    ),
+                    start = Offset(x - bubbleRadius, y - bubbleRadius),
+                    end = Offset(x + bubbleRadius, y + bubbleRadius)
+                ),
+                center = Offset(x, y),
+                radius = bubbleRadius
+            )
+
+            // Efeito de profundidade suave
+            drawCircle(
+                style = Stroke(width = bubbleRadius * 0.05f),
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0.8f to Color.Transparent,
+                        0.9f to Color(0.6f, 0.5f, 0.85f).copy(alpha = 0.1f),
+                        1.0f to Color(0.5f, 0.4f, 0.8f).copy(alpha = 0.05f)
+                    ).toList().toTypedArray(),
+                    center = Offset(x, y),
+                    radius = bubbleRadius * 1.1f
+                ),
+                center = Offset(x, y),
+                radius = bubbleRadius
+            )
+
+            // Reflexo brilhante
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
                         Color.White.copy(alpha = 0.9f),
-                        Color(0xFF90CAF9).copy(alpha = 0.6f),
-                        Color(0xFF2196F3).copy(alpha = 0.3f)
+                        Color.White.copy(alpha = 0.4f),
+                        Color.Transparent
                     ),
-                    center = Offset(bubbleRadius/3, bubbleRadius/3),
-                    radius = bubbleRadius * 1.5f
+                    center = Offset.Zero,
+                    radius = bubbleRadius/3
                 ),
-                center = Offset(x, y),
-                radius = bubbleRadius,
-                alpha = 0.8f - (easedProgress * 0.7f)
-            )
-
-            // Reflexo da luz
-            drawCircle(
-                color = Color.White.copy(alpha = 0.7f),
                 center = Offset(
-                    x - bubbleRadius/3,
-                    y - bubbleRadius/3
+                    x - bubbleRadius/3.2f,
+                    y - bubbleRadius/3.2f
                 ),
-                radius = bubbleRadius/4
+                radius = bubbleRadius/5
             )
         }
     }
 }
 
+
 private fun createNewBubble(bubbles: MutableList<Bubble>, startTime: Long) {
     bubbles.add(
         Bubble(
-            size = Random.nextFloat() * 65 + 45,  // 15-40dp
+            size = Random.nextFloat() * 45 + 25,  // 15-40dp
             startX = Random.nextFloat() * 100,    // 0-100% da largura
-            driftAmplitude = Random.nextFloat() * 60 + 30,  // 30-90px
-            duration = Random.nextInt(6000, 9000),// 3-6 segundos
+            driftAmplitude = Random.nextFloat() * 40 + 20,  // 30-90px
+            duration = Random.nextInt(10000, 15000),// 3-6 segundos
             startTime = startTime
         )
     )

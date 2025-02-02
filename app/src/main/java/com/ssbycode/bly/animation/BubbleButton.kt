@@ -2,10 +2,12 @@ package com.ssbycode.bly.animation
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -30,6 +32,8 @@ fun BubbleButton(
     shineColor: Color = Color.White.copy(alpha = 0.4f)
 ) {
     val infiniteTransition = rememberInfiniteTransition()
+    val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
+
     val density = LocalDensity.current
 
     // Animação de pulsação
@@ -149,7 +153,7 @@ fun BubbleButton(
         Text(
             text = text,
             fontSize = 18.sp,
-            color = Color.White,
+            color = textColor, // Cor dinâmica baseada no tema
             modifier = Modifier
                 .offset(y = floatOffset.dp * 2)
                 .graphicsLayer {
