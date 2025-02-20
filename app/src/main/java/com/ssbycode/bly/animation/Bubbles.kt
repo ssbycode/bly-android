@@ -155,7 +155,7 @@ fun BubbleAnimation(modifier: Modifier = Modifier) {
 private fun createNewBubble(bubbles: MutableList<Bubble>, startTime: Long) {
     bubbles.add(
         Bubble(
-            size = Random.nextFloat() * 45 + 25,  // 15-40dp
+            size = Random.nextFloat() * 95 + 25,  // 15-40dp
             startX = Random.nextFloat() * 100,    // 0-100% da largura
             driftAmplitude = Random.nextFloat() * 40 + 20,  // 30-90px
             duration = Random.nextInt(10000, 15000),// 3-6 segundos

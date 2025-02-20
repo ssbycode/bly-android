@@ -28,7 +28,7 @@ fun BubbleButton(
     modifier: Modifier = Modifier,
     text: String,
     elevation: Dp = 8.dp,
-    bubbleColor: Color = Color(0x8864B5F6), // Cor mais transparente
+    bubbleColor: Color = Color(0x8862AEEC), // Cor mais transparente
     shineColor: Color = Color.White.copy(alpha = 0.4f)
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -82,11 +82,11 @@ fun BubbleButton(
             .drawWithCache {
                 val brush = Brush.radialGradient(
                     colors = listOf(
-                        bubbleColor.copy(alpha = 0.3f),
-                        bubbleColor.copy(alpha = 0.2f),
-                        bubbleColor.copy(alpha = 0.1f)
+                        Color.White.copy(alpha = 0.6f), // Centro branco transparente
+                        bubbleColor.copy(alpha = 0.1f), // Transição suave
+                        bubbleColor.copy(alpha = 0.5f)  // Borda mais transparente
                     ),
-                    center = Offset(size.width/3, size.height/3),
+                    center = Offset(size.width / 2, size.height / 2), // Centralizado
                     radius = size.minDimension * 1.5f
                 )
 
@@ -115,7 +115,7 @@ fun BubbleButton(
                     drawCircle(
                         brush = brush,
                         radius = size.minDimension / 2,
-                        center = Offset(size.width/2, size.height/2),
+                        center = Offset(size.width / 2, size.height / 2),
                         alpha = 0.6f
                     )
 
@@ -123,7 +123,7 @@ fun BubbleButton(
                     drawCircle(
                         brush = shineBrush,
                         radius = size.minDimension / 2,
-                        center = Offset(size.width/2, size.height/2),
+                        center = Offset(size.width / 2, size.height / 2),
                         alpha = 0.3f
                     )
 
@@ -131,20 +131,19 @@ fun BubbleButton(
                     drawCircle(
                         brush = refractionBrush,
                         radius = size.minDimension / 2,
-                        center = Offset(size.width/2, size.height/2)
+                        center = Offset(size.width / 2, size.height / 2)
                     )
 
                     // Borda sutil
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.2f),
+                        color = Color.Blue.copy(alpha = 0.02f),
                         style = Stroke(width = 1.dp.toPx()),
                         radius = size.minDimension / 2 - 2.dp.toPx(),
-                        center = Offset(size.width/2, size.height/2)
+                        center = Offset(size.width / 2, size.height / 2)
                     )
                 }
             },
         shape = CircleShape,
-       // border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
             contentColor = Color.White.copy(alpha = 0.8f)
@@ -156,9 +155,6 @@ fun BubbleButton(
             color = textColor, // Cor dinâmica baseada no tema
             modifier = Modifier
                 .offset(y = floatOffset.dp * 2)
-                .graphicsLayer {
-                  //  alpha = 0.9f - (pulseScale - 1f) * 2f
-                }
         )
     }
 }

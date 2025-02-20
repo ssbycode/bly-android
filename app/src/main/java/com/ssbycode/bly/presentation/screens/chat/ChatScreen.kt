@@ -1,5 +1,6 @@
 package com.ssbycode.bly.presentation.screens.chat
 
+import BubbleAnimation
 import android.text.Layout
 import android.util.Log
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.ssbycode.bly.domain.communication.RealTimeCommunication
@@ -47,9 +49,18 @@ fun ChatScreen(
         )
     }.sortedByDescending { it.timestamp }
 
+            BubbleAnimation(
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.7f)
+        )
+
     Column(
         modifier = modifier.fillMaxSize()
     ) {
+
+
+
         TopAppBar(
             title = { Text("Chat") },
             navigationIcon = {

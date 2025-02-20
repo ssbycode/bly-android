@@ -51,6 +51,8 @@ fun HomeScreen(
 
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
+
+
     Box(modifier = modifier.fillMaxSize()) {
 
         BubbleAnimation(
@@ -67,7 +69,7 @@ fun HomeScreen(
         ) {
             // Header
             Text(
-
+                
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center, // Alinha o texto à direita
                 text = "Bly",
