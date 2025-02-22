@@ -1,255 +1,510 @@
 package com.ssbycode.bly.domain.bluetooth
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattCharacteristic
-import android.bluetooth.BluetoothGattServer
-import android.bluetooth.BluetoothGattServerCallback
-import android.bluetooth.BluetoothGattService
-import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
-import android.bluetooth.le.BluetoothLeScanner
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
-import android.content.pm.PackageManager
-import android.os.Build
-import android.util.Log
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.asStateFlow
-import java.util.UUID
+import android.annotation.SuppressLint
+import android.bluetooth.*
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
-import android.content.Context
+import android.bluetooth.le.BluetoothLeScanner
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanSettings
+//import android.content.Context
+import android.content.pm.PackageManager
+import android.net.wifi.ScanResult
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
-import kotlinx.coroutines.flow.MutableStateFlow
-import com.ssbycode.bly.domain.communication.BluetoothCommunication
-import com.ssbycode.bly.domain.communication.RealTimeCommunication
+//import android.util.Log
+import androidx.core.app.ActivityCompat
+import java.util.*
+import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
 
-class BluetoothService(
-    private val context: Context,
-    private val realTimeService: RealTimeCommunication
-) : BluetoothCommunication {
+import android.app.Service
+import android.bluetooth.*
+import android.bluetooth.le.*
+import android.content.Context
+import android.content.Intent
+import android.os.Binder
+import android.os.Build
+import android.os.IBinder
+import android.util.Log
+import androidx.core.content.ContextCompat
 
-    companion object {
-        private const val SERVICE_UUID = "12345678-1234-1234-1234-1234567890AB"
-        private const val CHARACTERISTIC_UUID = "87654321-4321-4321-4321-BA0987654321"
-        private const val CHUNK_SIZE = 20
+class BluetoothService(private val context: Context) {
+
+    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
+
+    /**
+     * Verifica se o Bluetooth está disponível e ativado.
+     */
+    fun isBluetoothEnabled(): Boolean {
+        return bluetoothAdapter?.isEnabled == true
     }
 
-    private val bluetoothManager: BluetoothManager by lazy {
-        context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-    }
-    private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        bluetoothManager.adapter
-    }
-    private val bluetoothLeScanner: BluetoothLeScanner? by lazy {
-        bluetoothAdapter?.bluetoothLeScanner
-    }
-    private val bluetoothGattServer: BluetoothGattServer? by lazy {
-        bluetoothManager.openGattServer(context, gattServerCallback)
-    }
-
-    private val _discoveredDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
-    override val discoveredDevicesFlow: Flow<List<BluetoothDevice>> = _discoveredDevices.asStateFlow()
-
-    private val _connectedDevice = MutableStateFlow<BluetoothDevice?>(null)
-    override val connectedDeviceFlow: Flow<BluetoothDevice?> = _connectedDevice.asStateFlow()
-
-    private var receivedDataBuffer = mutableMapOf<String, ByteArray>()
-    private var gattServer: BluetoothGattServer? = null
-    private var gattServiceCharacteristic: BluetoothGattCharacteristic? = null
-
-    private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val device = result.device
-            if (!_discoveredDevices.value.contains(device)) {
-                _discoveredDevices.value = _discoveredDevices.value + device
-            }
-        }
-    }
-
-    private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> {
-                    _connectedDevice.value = gatt.device
-//                    gatt.discoverServices()
-                }
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    _connectedDevice.value = null
-                }
-            }
-        }
-
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            status: Int
-        ) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d("BluetoothService", "Chunk written successfully")
-            }
-        }
-
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            value: ByteArray
-        ) {
-            handleReceivedChunk(value, gatt.device.address)
-        }
-    }
-
-    private val gattServerCallback = object : BluetoothGattServerCallback() {
-        override fun onCharacteristicWriteRequest(
-            device: BluetoothDevice,
-            requestId: Int,
-            characteristic: BluetoothGattCharacteristic,
-            preparedWrite: Boolean,
-            responseNeeded: Boolean,
-            offset: Int,
-            value: ByteArray
-        ) {
-            handleReceivedChunk(value, device.address)
-            if (responseNeeded) {
-//                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
-            }
-        }
-    }
-
-    init {
-        setupGattServer()
-    }
-
-    private fun setupGattServer() {
-        val service = BluetoothGattService(
-            UUID.fromString(SERVICE_UUID),
-            BluetoothGattService.SERVICE_TYPE_PRIMARY
-        )
-
-        gattServiceCharacteristic = BluetoothGattCharacteristic(
-            UUID.fromString(CHARACTERISTIC_UUID),
-            BluetoothGattCharacteristic.PROPERTY_WRITE or
-                    BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_WRITE
-        )
-
-        service.addCharacteristic(gattServiceCharacteristic)
-//        gattServer?.addService(service)
-    }
-
-    override suspend fun startScanning() {
-        if (!hasRequiredPermissions()) {
-            Log.e("BluetoothService", "Missing required Bluetooth permissions")
-            return
-        }
-
-        val scanFilter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(UUID.fromString(SERVICE_UUID)))
-            .build()
-
-        val scanSettings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-//        bluetoothLeScanner?.startScan(listOf(scanFilter), scanSettings, scanCallback)
-    }
-
-    override suspend fun stopScanning() {
-//        bluetoothLeScanner?.stopScan(scanCallback)
-    }
-
-    override suspend fun startAdvertising() {
-        if (!hasRequiredPermissions()) return
-
-        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setConnectable(true)
-            .setTimeout(0)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .build()
-
-        val shortId = realTimeService.localDeviceID.take(10)
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .addServiceUuid(ParcelUuid(UUID.fromString(SERVICE_UUID)))
-            .build()
-
-//        advertiser?.startAdvertising(settings, data, advertisingCallback)
-    }
-
-    override suspend fun stopAdvertising() {
-        if (!bluetoothAdapter!!.isEnabled) {
-            print("Bluetooth não está ativo para parar o advertising")
-            return
-        }
-        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
-
-//        advertiser?.stopAdvertising(advertisingCallback)
-
-    }
-
-    private fun handleReceivedChunk(data: ByteArray, deviceAddress: String) {
-        if (data.size < 2) return
-
-        val chunkIndex = data[0].toInt()
-        val totalChunks = data[1].toInt()
-
-        if (chunkIndex >= totalChunks || chunkIndex < 0 || totalChunks <= 0) {
-            Log.e("BluetoothService", "Dados inválidos recebidos")
-            return
-        }
-
-        val chunkData = data.sliceArray(2 until data.size)
-        val key = deviceAddress
-
-        receivedDataBuffer[key] = (receivedDataBuffer[key] ?: ByteArray(0)) + chunkData
-
-        if (chunkIndex == totalChunks - 1) {
-            val completeData = receivedDataBuffer[key] ?: return
-            val cleanData = completeData.takeWhile { it != 0.toByte() }.toByteArray()
-
-            val peerId = String(cleanData, Charsets.UTF_8).trim()
-            Log.d("BluetoothService", "Complete peerId received: $peerId")
-            realTimeService.connectTo(peerId)
-
-            receivedDataBuffer.remove(key)
-        }
-    }
-
-    private fun splitDataIntoChunks(data: ByteArray): List<ByteArray> {
-        return data.asSequence()
-            .chunked(CHUNK_SIZE)
-            .map { it.toByteArray() }
-            .toList()
-    }
-
-    private fun hasRequiredPermissions(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
-                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    /**
+     * Verifica se todas as permissões Bluetooth necessárias estão concedidas.
+     */
+    fun hasBluetoothPermissions(): Boolean {
+        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            )
         } else {
-            context.checkSelfPermission(Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
-                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED &&
-                    context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+
+        return requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
-    private val advertisingCallback = object : AdvertiseCallback() {
-        override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-            Log.d("BluetoothService", "Advertising started successfully")
+    /**
+     * Inicializa o Bluetooth, se as permissões forem concedidas e o Bluetooth estiver ativado.
+     */
+    fun initializeBluetooth() {
+        if (!hasBluetoothPermissions()) {
+            Log.e("BluetoothService", "Permissões Bluetooth não concedidas.")
+            return
         }
 
-        override fun onStartFailure(errorCode: Int) {
-            Log.e("BluetoothService", "Advertising failed to start with error: $errorCode")
+        if (!isBluetoothEnabled()) {
+            Log.e("BluetoothService", "Bluetooth está desativado.")
+            return
         }
+
+        Log.d("BluetoothService", "Bluetooth está pronto para uso.")
+        // Aqui você pode iniciar a lógica de escaneamento/conexão
     }
 }
+
+//class BluetoothService : Service() {
+//
+//    // Binder para vinculação com a Activity
+//    private val binder = LocalBinder()
+//
+//    // Gerenciador e adaptador de Bluetooth
+//    private lateinit var bluetoothManager: BluetoothManager
+//    private var bluetoothAdapter: BluetoothAdapter? = null
+//    private var bluetoothLeScanner: BluetoothLeScanner? = null
+//
+//    // Estado do scanner e lista de dispositivos encontrados
+//    private var isScanning = false
+//    private val scanResults = mutableListOf<BluetoothDevice>()
+//
+//    // Instância do GATT para conexões
+//    private var bluetoothGatt: BluetoothGatt? = null
+//
+//    inner class LocalBinder : Binder() {
+//        fun getService(): BluetoothService = this@BluetoothService
+//    }
+//
+//    override fun onBind(intent: Intent?): IBinder = binder
+//
+//    override fun onCreate() {
+//        super.onCreate()
+//        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+//        bluetoothAdapter = bluetoothManager.adapter
+//        bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
+//    }
+//
+//    /**
+//     * Inicia o scan de dispositivos BLE.
+//     * Opcionalmente, filtros podem ser adicionados na lista de ScanFilter.
+//     */
+//    fun startScan() {
+//        if (!isScanning) {
+//            scanResults.clear()
+//            val scanFilters = listOf<ScanFilter>() // Adicione filtros, se necessário
+//            val scanSettings = ScanSettings.Builder()
+//                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+//                .build()
+//            bluetoothLeScanner?.startScan(scanFilters, scanSettings, leScanCallback)
+//            isScanning = true
+//            Log.d("BluetoothService", "Iniciando scan BLE")
+//        }
+//    }
+//
+//    /**
+//     * Interrompe o scan de dispositivos BLE.
+//     */
+//    fun stopScan() {
+//        if (isScanning) {
+//            bluetoothLeScanner?.stopScan(leScanCallback)
+//            isScanning = false
+//            Log.d("BluetoothService", "Scan BLE interrompido")
+//        }
+//    }
+//
+//    /**
+//     * Callback para resultados de scan.
+//     */
+//    private val leScanCallback = object : ScanCallback() {
+//        override fun onScanResult(callbackType: Int, result: ScanResult) {
+//            result.device
+//
+//            result.device.let { device -> // Certifique-se de que `device` é acessado corretamente
+//                if (!scanResults.contains(device)) {
+//                    scanResults.add(device)
+//                    sendBroadcast(Intent(ACTION_DEVICE_FOUND).apply {
+//                        putExtra(EXTRA_DEVICE, device) // Possível erro aqui, vamos corrigir no próximo passo
+//                    })
+//                    Log.d("BluetoothService", "Dispositivo encontrado: ${device.address}")
+//                }
+//            }
+//        }
+//    }
+//
+//
+//    /**
+//     * Conecta a um dispositivo BLE usando o GATT.
+//     * Lembre-se: dispositivos iOS só se conectam via BLE.
+//     */
+//    fun connectToDevice(device: BluetoothDevice) {
+//        bluetoothGatt = device.connectGatt(this, false, gattCallback)
+//        Log.d("BluetoothService", "Tentando conectar ao dispositivo: ${device.address}")
+//    }
+//
+//    /**
+//     * Callback para eventos do Bluetooth GATT.
+//     */
+//    private val gattCallback = object : BluetoothGattCallback() {
+//        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+//            when (newState) {
+//                BluetoothProfile.STATE_CONNECTED -> {
+//                    Log.i("BluetoothService", "Conectado ao GATT. Descobrindo serviços...")
+//                    gatt.discoverServices()
+//                    sendBroadcast(Intent(ACTION_CONNECTED))
+//                }
+//                BluetoothProfile.STATE_DISCONNECTED -> {
+//                    Log.i("BluetoothService", "Desconectado do GATT")
+//                    sendBroadcast(Intent(ACTION_DISCONNECTED))
+//                }
+//                else -> {
+//                    Log.w("BluetoothService", "Estado inesperado: $newState")
+//                }
+//            }
+//        }
+//
+//        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+//            if (status == BluetoothGatt.GATT_SUCCESS) {
+//                Log.d("BluetoothService", "Serviços descobertos com sucesso")
+//                sendBroadcast(Intent(ACTION_SERVICES_DISCOVERED))
+//            } else {
+//                Log.w("BluetoothService", "Falha ao descobrir serviços. Status: $status")
+//            }
+//        }
+//
+//        // Outros callbacks (leitura, escrita, notificações) podem ser implementados aqui
+//        override fun onCharacteristicRead(
+//            gatt: BluetoothGatt,
+//            characteristic: BluetoothGattCharacteristic,
+//            status: Int
+//        ) {
+//            // Trate a leitura da característica conforme necessário
+//        }
+//
+//        override fun onCharacteristicChanged(
+//            gatt: BluetoothGatt,
+//            characteristic: BluetoothGattCharacteristic
+//        ) {
+//            // Trate a notificação de mudança de característica
+//        }
+//    }
+//
+//    override fun onDestroy() {
+//        super.onDestroy()
+//        bluetoothGatt?.close()
+//        bluetoothGatt = null
+//        Log.d("BluetoothService", "Serviço destruído e conexão GATT fechada")
+//    }
+//
+//    companion object {
+//        const val ACTION_DEVICE_FOUND = "com.seuapp.ACTION_DEVICE_FOUND"
+//        const val ACTION_CONNECTED = "com.seuapp.ACTION_CONNECTED"
+//        const val ACTION_DISCONNECTED = "com.seuapp.ACTION_DISCONNECTED"
+//        const val ACTION_SERVICES_DISCOVERED = "com.seuapp.ACTION_SERVICES_DISCOVERED"
+//        const val EXTRA_DEVICE = "com.seuapp.EXTRA_DEVICE"
+//    }
+//}
+//class BluetoothService(
+//    private val context: Context,
+//    private val realTimeService: RealTimeService,
+//    private val bluetoothAdapter: BluetoothAdapter,
+//) {
+////    private val bluetoothManager: BluetoothManager =
+////        context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+//
+//    private val bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
+//
+//    private val serviceUUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890AB")
+//    private val characteristicUUID: UUID = UUID.fromString("87654321-4321-4321-4321-BA0987654321")
+//
+//    private val connectedDevices = mutableMapOf<String, BluetoothDevice>()
+//    private val discoveredDevices = mutableListOf<BluetoothDevice>()
+//
+//    private var gattServer: BluetoothGattServer? = null
+//    private var gattCharacteristic: BluetoothGattCharacteristic? = null
+//
+//    private var isScanning = false
+//
+//    private val handler = Handler(Looper.getMainLooper())
+//    private val scanPeriod: Long = 10000 // 10 segundos para escaneamento
+//
+//    private val advertiseCallback = object : AdvertiseCallback() {
+//        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+//            super.onStartSuccess(settingsInEffect)
+//            Log.d(TAG, "✅ Advertising iniciado com sucesso")
+//        }
+//
+//        override fun onStartFailure(errorCode: Int) {
+//            super.onStartFailure(errorCode)
+//            Log.e(TAG, "❌ Falha ao iniciar advertising: $errorCode")
+//        }
+//    }
+//
+//    init {
+//        setupManagers()
+//    }
+//
+//    private fun setupManagers() {
+//        if (ActivityCompat.checkSelfPermission(
+//                context, Manifest.permission.BLUETOOTH_CONNECT
+//            ) != PackageManager.PERMISSION_GRANTED
+//        ) {
+//            Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida!")
+//            return
+//        }
+//
+//        if (context == null) {
+//            Log.e(TAG, "❌ Erro: Contexto é null! Abortando inicialização do Bluetooth.")
+//            return
+//        }
+//
+//        if (!hasBluetoothConnectPermission()) {
+//            Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida. Não é possível iniciar o GATT Server.")
+//            return
+//        }
+//
+//        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+//        if (bluetoothManager == null) {
+//            Log.e(TAG, "❌ Erro ao obter BluetoothManager!")
+//            return
+//        }
+//
+//        if (gattCallback != null) {
+//            gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
+//            if (gattServer == null) {
+//                Log.e(TAG, "❌ Erro ao abrir o GATT Server!")
+//                return
+//            }
+//        }
+//
+//        setupGattServer()
+//        Log.d(TAG, "✅ BluetoothService inicializado com sucesso.")
+//
+//        gattServer = bluetoothManager.openGattServer(context, gattServerCallback)
+//        setupGattServer()
+//    }
+//
+//    /** Inicia o escaneamento de dispositivos */
+//    @SuppressLint("MissingPermission")
+//    fun startScanning() {
+//        if (bluetoothAdapter?.isEnabled == true && bluetoothLeScanner != null && !isScanning) {
+//            isScanning = true
+//            handler.postDelayed({
+//                stopScanning()
+//            }, scanPeriod)
+//
+//            val scanFilters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(serviceUUID)).build())
+//            val scanSettings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+//
+//            bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
+//            Log.d(TAG, "🔍 Iniciando escaneamento...")
+//        } else {
+//            Log.d(TAG, "⚠️ Bluetooth não está ativo ou já está escaneando.")
+//        }
+//    }
+//
+//    /** Para o escaneamento */
+//    @SuppressLint("MissingPermission")
+//    fun stopScanning() {
+//        if (isScanning) {
+//            bluetoothLeScanner?.stopScan(scanCallback)
+//            isScanning = false
+//            Log.d(TAG, "🛑 Escaneamento parado")
+//        }
+//    }
+//
+//    /** Inicia o advertising (disponibiliza o dispositivo para conexões) */
+//    @SuppressLint("MissingPermission")
+//    fun startAdvertising() {
+//        Log.d(TAG, "📢 Iniciando Advertising...")
+//        val settings = AdvertiseSettings.Builder()
+//            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+//            .setConnectable(true)
+//            .setTimeout(0)
+//            .build()
+//
+//        val data = AdvertiseData.Builder()
+//            .setIncludeDeviceName(true)
+//            .addServiceUuid(ParcelUuid(serviceUUID))
+//            .build()
+//
+//        bluetoothAdapter?.bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+//    }
+//
+//    /** Configura o GATT Server */
+//    private fun setupGattServer() {
+//        val service = BluetoothGattService(serviceUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+//
+//        gattCharacteristic = BluetoothGattCharacteristic(
+//            characteristicUUID,
+//            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+//            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
+//        )
+//
+//        service.addCharacteristic(gattCharacteristic)
+//
+//        // Verifica permissão antes de adicionar o serviço
+//        if (!hasBluetoothConnectPermission()) {
+//            Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida! Não é possível adicionar o serviço GATT.")
+//            return
+//        }
+//
+//        if (ActivityCompat.checkSelfPermission(
+//                context,
+//                Manifest.permission.BLUETOOTH_CONNECT
+//            ) != PackageManager.PERMISSION_GRANTED
+//        ) {
+//            // TODO: Consider calling
+//            //    ActivityCompat#requestPermissions
+//            // here to request the missing permissions, and then overriding
+//            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+//            //                                          int[] grantResults)
+//            // to handle the case where the user grants the permission. See the documentation
+//            // for ActivityCompat#requestPermissions for more details.
+//            return
+//        }
+//        gattServer?.addService(service)
+//        Log.d(TAG, "✅ Serviço GATT adicionado com sucesso!")
+//    }
+//
+//    private fun hasBluetoothConnectPermission(): Boolean {
+//        return ActivityCompat.checkSelfPermission(
+//            context, Manifest.permission.BLUETOOTH_CONNECT
+//        ) == PackageManager.PERMISSION_GRANTED
+//    }
+//
+//    /** Callbacks do Bluetooth LE Scanner */
+//    private val scanCallback = object : ScanCallback() {
+//        @SuppressLint("MissingPermission")
+//        fun onScanResult(callbackType: Int, result: ScanResult?) {
+////            result?.device?.let { device ->
+////                Log.d(TAG, "📡 Dispositivo encontrado: ${device.name ?: "Desconhecido"}")
+////                if (!discoveredDevices.contains(device)) {
+////                    discoveredDevices.add(device)
+////                    connectToDevice(device)
+////                }
+//        }
+//    }
+//
+//    /** Conectar a um dispositivo Bluetooth */
+//    @SuppressLint("MissingPermission")
+//    private fun connectToDevice(device: BluetoothDevice) {
+//        Log.d(TAG, "🔗 Tentando conectar ao dispositivo ${device.name ?: "Desconhecido"}")
+//        device.connectGatt(context, false, gattCallback)
+//    }
+//
+//    /** Callbacks do GATT Server */
+//    private val gattServerCallback = object : BluetoothGattServerCallback() {
+//
+//        override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
+//            if (ActivityCompat.checkSelfPermission(
+//                    context, Manifest.permission.BLUETOOTH_CONNECT
+//                ) != PackageManager.PERMISSION_GRANTED
+//            ) {
+//                Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida!")
+//                return
+//            }
+//
+//            if (newState == BluetoothProfile.STATE_CONNECTED && device != null) {
+//                Log.d(TAG, "✅ Dispositivo conectado: ${device.name ?: "Desconhecido"}")
+//                connectedDevices[device.address] = device
+//            } else if (newState == BluetoothProfile.STATE_DISCONNECTED && device != null) {
+//                Log.d(TAG, "❌ Dispositivo desconectado: ${device.name ?: "Desconhecido"}")
+//                connectedDevices.remove(device.address)
+//                startScanning()
+//            }
+//        }
+//
+//        override fun onCharacteristicWriteRequest(
+//            device: BluetoothDevice?,
+//            requestId: Int,
+//            characteristic: BluetoothGattCharacteristic?,
+//            preparedWrite: Boolean,
+//            responseNeeded: Boolean,
+//            offset: Int, // ⚠️ Adicionei esse parâmetro que estava faltando
+//            value: ByteArray?
+//        ) {
+//            val receivedData = value?.toString(Charsets.UTF_8) ?: "N/A"
+//            Log.d(TAG, "📥 Dados recebidos: $receivedData")
+//
+//            if (ActivityCompat.checkSelfPermission(
+//                    context, Manifest.permission.BLUETOOTH_CONNECT
+//                ) != PackageManager.PERMISSION_GRANTED
+//            ) {
+//                Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida!")
+//                return
+//            }
+//
+//            if (responseNeeded && device != null) {
+//                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+//                Log.d(TAG, "✅ Resposta enviada")
+//            }
+//        }
+//    }
+//
+//
+//    /** Callbacks do GATT Client */
+//    private val gattCallback = object : BluetoothGattCallback() {
+//        override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+//            if (ActivityCompat.checkSelfPermission(
+//                    context, Manifest.permission.BLUETOOTH_CONNECT
+//                ) != PackageManager.PERMISSION_GRANTED
+//            ) {
+//                Log.e(TAG, "❌ Permissão BLUETOOTH_CONNECT não concedida!")
+//                return
+//            }
+//
+//            if (newState == BluetoothProfile.STATE_CONNECTED) {
+//                Log.d(TAG, "✅ Conectado ao dispositivo ${gatt?.device?.name ?: "Desconhecido"}")
+//                gatt?.discoverServices()
+//            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+//                Log.d(TAG, "❌ Desconectado do dispositivo ${gatt?.device?.name ?: "Desconhecido"}")
+//                gatt?.close()
+//            }
+//        }
+//
+//        override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
+//            gatt?.services?.forEach { service ->
+//                Log.d(TAG, "🔍 Serviço descoberto: ${service.uuid}")
+//                if (service.uuid == serviceUUID) {
+//                    gattCharacteristic = service.getCharacteristic(characteristicUUID)
+//                }
+//            }
+//        }
+//    }
+//
+//    companion object {
+//        private const val TAG = "BluetoothService"
+//    }
+//}

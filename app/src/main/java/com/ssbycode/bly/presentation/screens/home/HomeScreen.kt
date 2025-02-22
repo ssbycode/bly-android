@@ -1,6 +1,5 @@
 package com.ssbycode.bly.presentation.screens.home
 
-import com.ssbycode.bly.domain.bluetooth.BluetoothManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,18 +24,16 @@ import androidx.core.content.ContextCompat
 import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import com.ssbycode.bly.domain.firebase.FirebaseManager
 import androidx.navigation.NavController
-import com.ssbycode.bly.domain.communication.BluetoothCommunication
-import com.ssbycode.bly.domain.communication.RealTimeCommunication
+import com.ssbycode.bly.domain.bluetooth.BluetoothService
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
-import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
 import com.ssbycode.bly.presentation.navigation.Screen
 import com.ssbycode.bly.presentation.screens.chat.ChatScreen
 import kotlinx.coroutines.flow.take
 
 @Composable
 fun HomeScreen(
-    realTimeViewModel: RealTimeViewModel,
-    bluetoothManager: BluetoothCommunication,
+    bluetoothService: BluetoothService,
+    realTimeService: RealTimeService,
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
@@ -44,8 +41,8 @@ fun HomeScreen(
     var alertMessage by remember { mutableStateOf("") }
     var newPeerId by remember { mutableStateOf("959298FD-6A7C-494F-B4B0-9417CCEA626D") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
 
-    val isConnected = realTimeViewModel.connectedDevices.collectAsState().value.isNotEmpty()
-    val connectedDevicesCount = realTimeViewModel.connectedDevices.collectAsState().value.size
+    val isConnected = realTimeService.connectedDevices.collectAsState().value.isNotEmpty()
+    val connectedDevicesCount = realTimeService.connectedDevices.collectAsState().value.size
 
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
@@ -70,7 +67,7 @@ fun HomeScreen(
                         navController.navigate(Screen.Chat.route) // Navega para a tela de chat diretamente
                     } else {
                         if (newPeerId.isNotEmpty()) {
-                            realTimeViewModel.connectTo(newPeerId)
+                            realTimeService.connectTo(newPeerId)
                         }
                     }
                 },
@@ -100,7 +97,7 @@ fun HomeScreen(
                 if (isConnected) {
                     Button(
                         onClick = {
-                            realTimeViewModel.disconnectAll()
+                            realTimeService.disconnectAll()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
@@ -118,7 +115,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Local ID: ${realTimeViewModel.localDeviceID}",
+                        text = "Local ID: ${"XXXX"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

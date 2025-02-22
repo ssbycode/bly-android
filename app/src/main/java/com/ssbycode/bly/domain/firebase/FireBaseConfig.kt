@@ -7,15 +7,14 @@ import com.google.firebase.database.FirebaseDatabase
 
 object FirebaseConfig {
 
-    // Configurações existentes
     private const val DATABASE_URL = "https://bly-app-default-rtdb.firebaseio.com"
     private const val PERSISTENCE_ENABLED = false
 
-    // Função de configuração
     fun initialSetup(context: Context) {
-        Log.i("Firebase", "Configurando Firebase...")
         FirebaseApp.initializeApp(context)
+
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
         database.setPersistenceEnabled(PERSISTENCE_ENABLED)
+        Log.d("Firebase", "Configurando Firebase...")
     }
 }

@@ -1,34 +1,51 @@
 package com.ssbycode.bly.domain.firebase
 
-import com.ssbycode.bly.domain.communication.SignalingService
 import com.google.firebase.database.*
-import kotlin.collections.HashSet
+import com.ssbycode.bly.domain.communication.SignalingService
 import kotlinx.coroutines.*
+import java.util.*
+import kotlin.collections.HashSet
 
-private val cleanupScope = CoroutineScope(Dispatchers.Default)
+// MARK: - Key Abbreviations
+/*
+ For data optimization, we use abbreviated keys:
+ t  = type
+ d  = data
+ ts = timestamp
+ s  = sender
+ r  = receiver
+ ea = expiresAt
+ st = status
+ e  = error
+ pa = processedAt
+*/
 
-
-// Enums
+// MARK: - Enums and Protocols
 enum class SignalType(val value: String) {
-    INITIAL("init"),  // Alterado de "initial" para "init"
-    OFFER("offer"),
-    ANSWER("answer"),
-    CANDIDATE("candidate"),
-    BYE("bye");
+    INITIAL("i"),    // initial
+    OFFER("o"),      // offer
+    ANSWER("a"),     // answer
+    CANDIDATE("c"),  // candidate
+    BYE("b");        // bye
 
     val finalStatus: SignalStatus
         get() = when (this) {
-            INITIAL -> SignalStatus.COMPLETED
+            INITIAL, BYE -> SignalStatus.COMPLETED
             OFFER, ANSWER, CANDIDATE -> SignalStatus.PROCESSING
-            BYE -> SignalStatus.COMPLETED
         }
+
+    companion object {
+        fun fromString(value: String): SignalType? {
+            return values().firstOrNull { it.value == value.lowercase().take(1) }
+        }
+    }
 }
 
 enum class SignalStatus(val value: String) {
-    PENDING("pending"),
-    PROCESSING("processing"),
-    COMPLETED("completed"),
-    FAILED("failed")
+    PENDING("p"),        // pending
+    PROCESSING("pr"),    // processing
+    COMPLETED("c"),      // completed
+    FAILED("f");         // failed
 }
 
 sealed class SignalError : Exception() {
@@ -37,54 +54,67 @@ sealed class SignalError : Exception() {
     object Timeout : SignalError()
 }
 
-
 class FirebaseManager(
-    private val signalTimeout: Long = 60 // em segundos
+    private val localDeviceID: String = UUID.randomUUID().toString()
 ) : SignalingService {
 
+    // MARK: - Properties
     private val database: DatabaseReference = FirebaseDatabase.getInstance().reference
+    private val signalCache = SignalCache()
     private val activeSignals = HashSet<String>()
-    private val observers = mutableMapOf<String, ChildEventListener>()
+    private val observers = mutableMapOf<String, ValueEventListener>()
     private val processingSignals = HashSet<String>()
+    private val processingTimestamps = mutableMapOf<String, Long>()
+    private val cleanupInterval: Long = 15000 // 15 seconds
+
+    private val signalTimeouts = mapOf(
+        "b" to 10000L,    // 10 seconds for bye
+        "c" to 30000L,    // 30 seconds for candidate
+        "default" to 60000L // 60 seconds default
+    )
+
+    private val cleanupJob = CoroutineScope(Dispatchers.IO).launch {
+        while (isActive) {
+            cleanupExpiredSignals()
+            delay(cleanupInterval)
+        }
+    }
 
     init {
         setupInitialConfiguration()
     }
 
+    // MARK: - Initialization
     private fun setupInitialConfiguration() {
         testConnection()
-        setupSignalCleanup()
+        countAllSignals { count ->
+            println("Total signals found: $count")
+        }
     }
 
+    // MARK: - Public Methods
     override fun sendSignal(deviceID: String, type: String, data: String, receiver: String) {
-        if (deviceID.isEmpty() || type.isEmpty() || data.isEmpty() || receiver.isEmpty()) {
+        if (deviceID.isEmpty() || type.isEmpty() || receiver.isEmpty()) {
             println("❌ Invalid signal parameters")
             return
         }
 
-        println("📤 Sending signal with parameters:")
-        println("DeviceID: $deviceID")
-        println("Type: $type")
-        println("Receiver: $receiver")
-        println("Data length: ${data.length}")
+        println("📤 Sending $type signal to device: $receiver")
 
         val signal = createSignal(deviceID, type, data, receiver)
-        println("Created signal: $signal")
-
         val signalRef = database.child("signals").child(receiver).push()
-        println("Signal path: ${signalRef.path}")
 
+        signalCache.store(signalId = signalRef.key ?: "", signal = signal)
         activeSignals.add(signalRef.key ?: "")
 
-        signalRef.setValue(signal).addOnCompleteListener { task ->
-            if (task.isSuccessful) {
+        signalRef.setValue(signal)
+            .addOnSuccessListener {
                 println("✅ Signal sent successfully: $type")
-            } else {
-                println("❌ Error sending signal: ${task.exception?.message}")
-                println("❌ Error details: ${task.exception}")
-                handleSignalError(signalRef, task.exception ?: Exception("Unknown error"))
             }
-        }
+            .addOnFailureListener { error ->
+                println("❌ Error sending signal: ${error.message}")
+                handleSignalError(signalRef, error)
+            }
     }
 
     override fun listenSignal(
@@ -93,18 +123,15 @@ class FirebaseManager(
     ) {
         println("🎧 Starting to listen for signals on device: $deviceID")
 
-        // Limpa listeners anteriores
         stopListening(deviceID)
 
         val signalsRef = database.child("signals").child(deviceID)
-            .orderByChild("status")
+            .orderByChild("st")
             .equalTo(SignalStatus.PENDING.value)
 
         val listener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                if (!processingSignals.contains(snapshot.key)) {
-                    handleNewSignal(snapshot, onSignalReceived)
-                }
+                handleNewSignal(snapshot, onSignalReceived)
             }
 
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
@@ -116,7 +143,7 @@ class FirebaseManager(
         }
 
         signalsRef.addChildEventListener(listener)
-        observers[deviceID] = listener
+        setupStatusMonitoring(deviceID)
     }
 
     override fun stopListening(deviceID: String) {
@@ -128,8 +155,10 @@ class FirebaseManager(
         }
 
         processingSignals.clear()
+        processingTimestamps.clear()
     }
 
+    // MARK: - Private Methods
     private fun createSignal(
         deviceID: String,
         type: String,
@@ -137,18 +166,17 @@ class FirebaseManager(
         receiver: String
     ): Map<String, Any> {
         val currentTimestamp = System.currentTimeMillis()
-        val timeoutMilliseconds = signalTimeout * 1000
-        val expiresAt = currentTimestamp + timeoutMilliseconds
+        val timeout = signalTimeouts[type] ?: signalTimeouts["default"]!!
+        val expiresAt = currentTimestamp + timeout
 
         return mapOf(
-            "type" to type,           // ✓ Validação: deve ser um dos valores permitidos
-            "data" to data,           // ✓ Validação: deve ser string
-            "timestamp" to ServerValue.TIMESTAMP,  // ✓ Validação: deve ser <= now
-            "sender" to deviceID,     // ✓ Validação: não pode estar vazio
-            "receiver" to receiver,   // ✓ Validação: não pode estar vazio
-            "processed" to false,     // ✓ Validação: deve ser booleano
-            "expiresAt" to expiresAt, // ✓ Validação: deve ser > now
-            "status" to SignalStatus.PENDING.value // ✓ Validação: deve ser um dos valores permitidos
+            "t" to type,        // type
+            "d" to data,        // data
+            "ts" to ServerValue.TIMESTAMP,  // timestamp
+            "s" to deviceID,    // sender
+            "r" to receiver,    // receiver
+            "ea" to expiresAt,  // expiresAt
+            "st" to SignalStatus.PENDING.value // status
         )
     }
 
@@ -156,36 +184,36 @@ class FirebaseManager(
         snapshot: DataSnapshot,
         onSignalReceived: (type: String, data: String, sender: String, completion: (Boolean) -> Unit) -> Unit
     ) {
-        val signal = snapshot.getValue(object : GenericTypeIndicator<Map<String, Any>>() {}) ?: return
+        // Check cache first
+        signalCache.retrieve(snapshot.key ?: "")?.let { cachedSignal ->
+            val type = cachedSignal["t"] as? String
+            val data = cachedSignal["d"] as? String
+            val sender = cachedSignal["s"] as? String
 
-        val type = signal["type"] as? String ?: return
-        val data = signal["data"] as? String ?: return
-        val sender = signal["sender"] as? String ?: return
-
-        if (processingSignals.contains(snapshot.key)) {
-            println("Signal already being processed: ${snapshot.key}")
-            return
+            if (type != null && data != null && sender != null) {
+                println("📤 Using cached signal: ${snapshot.key}")
+                onSignalReceived(type, data, sender) { success ->
+                    if (success) {
+                        signalCache.remove(snapshot.key ?: "")
+                    }
+                }
+                return
+            }
         }
 
-        println("📨 New signal received - Type: $type, From: $sender")
+        // If not in cache, process normally
+        val signal = snapshot.getValue(object : GenericTypeIndicator<Map<String, Any>>() {}) ?: return
+        val type = signal["t"] as? String ?: return
+        val data = signal["d"] as? String ?: return
+        val sender = signal["s"] as? String ?: return
 
-        snapshot.key?.let { key ->
-            processingSignals.add(key)
+        // Store in cache
+        signalCache.store(signalId = snapshot.key ?: "", signal = signal)
 
-            updateSignalStatus(snapshot, SignalStatus.PROCESSING) { success ->
-                if (success) {
-                    onSignalReceived(type, data, sender) { signalSuccess ->
-                        try {
-                            val signalType = SignalType.valueOf(type.uppercase())
-                            val finalStatus = if (signalSuccess) signalType.finalStatus else SignalStatus.FAILED
-                            updateSignalStatus(snapshot, finalStatus)
-                        } finally {
-                            processingSignals.remove(key)
-                        }
-                    }
-                } else {
-                    processingSignals.remove(key)
-                }
+        println("📨 Processing new signal - Type: $type, From: $sender")
+        onSignalReceived(type, data, sender) { success ->
+            if (success) {
+                signalCache.remove(snapshot.key ?: "")
             }
         }
     }
@@ -195,25 +223,23 @@ class FirebaseManager(
         status: SignalStatus,
         completion: ((Boolean) -> Unit)? = null
     ) {
-        val updates = mapOf(
-            "status" to status.value,
-            "processedAt" to ServerValue.TIMESTAMP
-        )
+        val updates = mapOf("st" to status.value)
 
         snapshot.ref.updateChildren(updates)
             .addOnCompleteListener { task ->
                 completion?.invoke(task.isSuccessful)
 
-                if (!task.isSuccessful) {
-                    println("❌ Error updating signal status: ${task.exception?.message ?: "Unknown error"}")
+                // If signal completed, remove immediately
+                if (task.isSuccessful && status == SignalStatus.COMPLETED) {
+                    snapshot.ref.removeValue()
                 }
             }
     }
 
     private fun handleSignalError(ref: DatabaseReference, error: Exception) {
         val errorUpdate = mapOf(
-            "status" to SignalStatus.FAILED.value,
-            "error" to error.message
+            "st" to SignalStatus.FAILED.value,  // status
+            "e" to error.message                // error
         )
 
         ref.updateChildren(errorUpdate)
@@ -222,10 +248,10 @@ class FirebaseManager(
     private fun setupStatusMonitoring(deviceID: String) {
         val statusRef = database.child("signals").child(deviceID)
 
-        val valueEventListener = object : ChildEventListener {
+        statusRef.addChildEventListener(object : ChildEventListener {
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
                 val signal = snapshot.getValue(object : GenericTypeIndicator<Map<String, Any>>() {})
-                val status = signal?.get("status") as? String
+                val status = signal?.get("st") as? String
 
                 if (status != null) {
                     println("📡 Signal status changed - ID: ${snapshot.key}, Status: $status")
@@ -236,56 +262,69 @@ class FirebaseManager(
             override fun onChildRemoved(snapshot: DataSnapshot) {}
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
             override fun onCancelled(error: DatabaseError) {}
-        }
-
-        statusRef.addChildEventListener(valueEventListener)
+        })
     }
 
-    private fun setupSignalCleanup() {
-        cleanupScope.launch {
-            while (isActive) {
-                cleanupExpiredSignals()
-                delay(300000) // 5 minutos
-            }
-        }
-    }
-
+    // MARK: - Cleanup
     private fun cleanupExpiredSignals() {
         val currentTimestamp = System.currentTimeMillis()
 
-        database.child("signals")
-            .orderByChild("status")
+        val signalsRef = database.child("signals").child(localDeviceID)
+
+        // Query for expired signals
+        signalsRef.orderByChild("ea")
+            .endAt(currentTimestamp.toDouble())
+            .get()
+            .addOnSuccessListener { snapshot ->
+                snapshot.children.forEach { it.ref.removeValue() }
+            }
+
+        // Query for completed signals
+        signalsRef.orderByChild("st")
             .equalTo(SignalStatus.COMPLETED.value)
             .get()
             .addOnSuccessListener { snapshot ->
-                snapshot.children.forEach { child ->
-                    val signal = child.getValue(object : GenericTypeIndicator<Map<String, Any>>() {})
-                    val expiresAt = (signal?.get("expiresAt") as? Long) ?: return@forEach
+                snapshot.children.forEach { it.ref.removeValue() }
+            }
+    }
 
-                    if (expiresAt < currentTimestamp) {
-                        child.ref.removeValue()
-                            .addOnSuccessListener {
-                                println("✅ Removed expired signal: ${child.key}")
-                            }
-                            .addOnFailureListener { e ->
-                                println("❌ Failed to remove expired signal: ${e.message}")
-                            }
-                    }
-                }
+    private fun cleanupProcessingSignals() {
+        val currentTimestamp = System.currentTimeMillis()
+        val staleTimestamp = currentTimestamp - 30000 // 30 seconds
+
+        // Remove old signals from processingSignals
+        processingTimestamps.entries
+            .filter { it.value < staleTimestamp }
+            .forEach { (signalId, _) ->
+                processingSignals.remove(signalId)
+                processingTimestamps.remove(signalId)
             }
     }
 
     private fun testConnection() {
-//        val testRef = database.child("test/")
-//        testRef.addValueEventListener(object : ValueEventListener {
-//            override fun onDataChange(snapshot: DataSnapshot) {
-//                val connected = snapshot.getValue(Boolean::class.java) ?: false
-//                println(if (connected) "✅ Connected to Firebase" else "❌ Disconnected from Firebase")
-//            }
-//
-//            override fun onCancelled(error: DatabaseError) {
-//                println("❌ Connection test failed: ${error.message}")
-//            }
-//        })
+        val connectedRef = database.child(".info/connected")
+        connectedRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val connected = snapshot.getValue(Boolean::class.java) ?: false
+                println(if (connected) "✅ Connected to Firebase" else "❌ Disconnected from Firebase")
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    // MARK: - Debug Methods
+    fun countAllSignals(completion: (Int) -> Unit) {
+        database.child("signals").get()
+            .addOnSuccessListener { snapshot ->
+                var totalCount = 0
+                snapshot.children.forEach { deviceSnapshot ->
+                    totalCount += deviceSnapshot.childrenCount.toInt()
+                }
+                completion(totalCount)
+            }
+            .addOnFailureListener {
+                completion(0)
+            }
     }
 }

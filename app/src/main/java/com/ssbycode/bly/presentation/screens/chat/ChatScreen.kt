@@ -1,192 +1,182 @@
 package com.ssbycode.bly.presentation.screens.chat
 
-import android.text.Layout
-import android.util.Log
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.*
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.navigation.NavController
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ssbycode.bly.data.realTimeCommunication.Message
-import com.ssbycode.bly.domain.communication.RealTimeCommunication
-import com.ssbycode.bly.domain.realTimeCommunication.RealTimeViewModel
-import com.ssbycode.bly.presentation.navigation.Screen
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.ssbycode.bly.presentation.screens.chat.components.UserBubble
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    realTimeViewModel: RealTimeViewModel,
-    navController: NavController,
-    modifier: Modifier = Modifier
+    viewModel: ChatViewModel,
+    onDismiss: () -> Unit
 ) {
-    var messageText by remember { mutableStateOf("") }
-    // Collect states
-    val connectedDevices by realTimeViewModel.connectedDevices.collectAsState()
-    val sendButtonEnabled = messageText.isNotEmpty() && connectedDevices.isNotEmpty()
+    var showExitDialog by remember { mutableStateOf(false) }
+    val messages by viewModel.messages.collectAsState()
+    val newMessage by viewModel.newMessage.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val connectedDevices by viewModel.connectedDevices.collectAsState()
 
     Column(
-        modifier = modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
     ) {
         // Header
-        TopAppBar(
-            title = { Text("Bly Chat 🫧") },
-            navigationIcon = {
-                IconButton(
-                    onClick = {
-                        if (!navController.popBackStack()) {
-                            navController.navigate(Screen.Home.route) {
-                                popUpTo(Screen.Home.route) { inclusive = true }
-                            }
-                        }
-                    }
-                ) {
-                    Icon(Icons.Default.ArrowBack, "Voltar")
-                }
-            }
+        GroupHeader(
+            isScanning = isScanning,
+            connectedDevices = connectedDevices,
+            onExitClick = { showExitDialog = true }
         )
-
-        // Connected Users
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(connectedDevices.toList()) { deviceId ->
-                UserChip(deviceId = deviceId)
-            }
-        }
 
         // Messages
-        val messagesWithInfo = realTimeViewModel.messagesWithSequenceInfo
+        ChatMessages(
+            messages = messages,
+            modifier = Modifier.weight(1f)
+        )
 
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(
-                items = messagesWithInfo,
-                key = { it.first.id }
-            ) { (message, isLastInSequence) ->
-                ChatMessageItem(
-                    message = message,
-                    isLastInSequence = isLastInSequence
-                )
-            }
-        }
-
-        // Message Input
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextField(
-                    value = messageText,
-                    onValueChange = { messageText = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp),
-                    placeholder = { Text("Mensagem") },
-                    colors = TextFieldDefaults.colors(
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent
-                    ),
-                    maxLines = 4
-                )
-
-                IconButton(
-                    onClick = {
-                        Log.i("ChatScreen", "Sending message: $messageText")
-//                        if (messageText.isNotEmpty()) {
-                        realTimeViewModel.broadcast(messageText)
-                        messageText = ""
-//                        }
-                    },
-                    enabled = sendButtonEnabled
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = "Enviar",
-                        tint = if (sendButtonEnabled)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
-            }
-        }
+        // Input Bar
+        MessageInputBar(
+            message = newMessage,
+            onMessageChange = {  },
+            onSendClick = { viewModel.broadcast() },
+            isEnabled = !viewModel.sendButtonDisabled
+        )
     }
-}
 
-@Composable
-private fun UserChip(deviceId: String) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer
-    ) {
-        Text(
-            text = deviceId.take(4),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.bodyMedium
+    if (showExitDialog) {
+        ExitDialog(
+            onDismiss = { showExitDialog = false },
+            onConfirm = {
+                viewModel.disconnect()
+                onDismiss()
+            }
         )
     }
 }
 
 @Composable
-private fun ChatMessageItem(
-    message: Message,
-    isLastInSequence: Boolean
+private fun GroupHeader(
+    isScanning: Boolean,
+    connectedDevices: List<String>,
+    onExitClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalAlignment = if (message.isFromCurrentUser)
-            Alignment.End else Alignment.Start
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (message.isFromCurrentUser)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            ),
-            shape = RoundedCornerShape(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onExitClick) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Exit",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(
+                text = "Chat 🫧",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold
+                )
+            )
+
+            if (isScanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+        }
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp)
+        ) {
+            items(connectedDevices) { deviceId ->
+                UserBubble(userId = deviceId)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatMessages(
+    messages: List<Message>,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(
+            items = messages,
+            key = { it.id }
+        ) { messageInfo ->
+            MessageBubble(
+                message = messageInfo.content,
+                isFromCurrentUser = messageInfo.isFromCurrentUser,
+                senderPeerId = messageInfo.senderId,
+                isLastInSequence = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(
+    message: String,
+    isFromCurrentUser: Boolean,
+    senderPeerId: String,
+    isLastInSequence: Boolean
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isFromCurrentUser) Alignment.End else Alignment.Start
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (isFromCurrentUser)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp)
         ) {
             Text(
-                text = message.content,
-                modifier = Modifier.padding(12.dp),
-                color = if (message.isFromCurrentUser)
+                text = message,
+                modifier = Modifier.padding(8.dp),
+                color = if (isFromCurrentUser)
                     MaterialTheme.colorScheme.onPrimary
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -195,12 +185,93 @@ private fun ChatMessageItem(
 
         if (isLastInSequence) {
             Text(
-                text = SimpleDateFormat("HH:mm", Locale.getDefault())
-                    .format(Date((message.timestamp * 1000).toLong())),
-                style = MaterialTheme.typography.bodySmall,
+                text = senderPeerId.formattedDeviceID,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp)
+                modifier = Modifier.padding(horizontal = 8.dp)
             )
         }
     }
 }
+
+@Composable
+private fun MessageInputBar(
+    message: String,
+    onMessageChange: (String) -> Unit,
+    onSendClick: () -> Unit,
+    isEnabled: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextField(
+            value = message,
+            onValueChange = onMessageChange,
+            modifier = Modifier
+                .weight(1f)
+                .background(
+                    MaterialTheme.colorScheme.surface,
+                    RoundedCornerShape(20.dp)
+                ),
+            placeholder = { Text("Mensagem") },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent
+            )
+        )
+
+        IconButton(
+            onClick = {
+                // Haptic feedback would go here
+                onSendClick()
+            },
+            enabled = isEnabled
+        ) {
+            Icon(
+                imageVector = Icons.Default.Send,
+                contentDescription = "Send",
+                modifier = Modifier.size(32.dp),
+                tint = if (isEnabled)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExitDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sair da bolha? 🫧") },
+        text = { Text("Você será desconectado desta conversa") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Sair")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+// Extension property
+val String.formattedDeviceID: String
+    get() = this.takeLast(4)

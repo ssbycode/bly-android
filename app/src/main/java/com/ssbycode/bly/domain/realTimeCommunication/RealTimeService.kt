@@ -12,7 +12,6 @@ import kotlinx.coroutines.launch
 import org.webrtc.*
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
-import com.ssbycode.bly.domain.communication.RealTimeCommunication
 import com.ssbycode.bly.data.realTimeCommunication.Message
 import com.ssbycode.bly.data.realTimeCommunication.DeviceConnection
 import com.ssbycode.bly.data.realTimeCommunication.TimestampAdapter
@@ -25,17 +24,17 @@ import java.util.UUID
 class RealTimeService(
     private val context: Context,
     private val signalingService: SignalingService,
-    override val localDeviceID: String
-) : RealTimeCommunication {
+    private val localDeviceID: String
+) {
 
     private lateinit var peerConnectionFactory: PeerConnectionFactory
     private val executor = Executors.newSingleThreadExecutor()
 
     private val _connectedDevicesFlow = MutableStateFlow<Map<String, DeviceConnection>>(emptyMap())
-    override val connectedDevicesFlow: StateFlow<Map<String, DeviceConnection>> get() = _connectedDevicesFlow
+    val connectedDevices: StateFlow<Map<String, DeviceConnection>> get() = _connectedDevicesFlow
 
     private val _messagesFlow = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
-    override val messagesFlow: StateFlow<Map<String, List<Message>>> get() = _messagesFlow
+    val messages: StateFlow<Map<String, List<Message>>> get() = _messagesFlow
 
     init {
         initializePeerConnectionFactory()
@@ -43,7 +42,7 @@ class RealTimeService(
     }
 
     // Public Methods
-    override fun connectTo(remoteDeviceID: String) {
+    fun connectTo(remoteDeviceID: String) {
         Log.i("RealTimeService", "Initiating connection to device: $remoteDeviceID")
 
         if (_connectedDevicesFlow.value.containsKey(remoteDeviceID)) {
@@ -78,7 +77,7 @@ class RealTimeService(
         createAndSendOfferTo(remoteDeviceID = remoteDeviceID, connection = connection)
     }
 
-    override fun disconnectFrom(remoteDeviceID: String) {
+    fun disconnectFrom(remoteDeviceID: String) {
         Log.i("RealTimeService", "Disconnecting from device: $remoteDeviceID")
 
         val deviceConnection = _connectedDevicesFlow.value[remoteDeviceID] ?: run {
@@ -107,7 +106,7 @@ class RealTimeService(
         Log.i("RealTimeService", "Disconnected from device: $remoteDeviceID")
     }
 
-    override fun disconnectAll() {
+    fun disconnectAll() {
         Log.i("RealTimeService", "Disconnecting from all devices")
 
         _connectedDevicesFlow.value.keys.toList().forEach { deviceId ->
@@ -117,7 +116,7 @@ class RealTimeService(
         _messagesFlow.value = emptyMap()
     }
 
-    override fun broadcast(data: ByteArray) {
+     fun broadcast(data: ByteArray) {
         _connectedDevicesFlow.value.forEach { (deviceID, connection) ->
             // Verifica se a conexão está pronta para enviar mensagens
             if (!connection.isConnected) {
