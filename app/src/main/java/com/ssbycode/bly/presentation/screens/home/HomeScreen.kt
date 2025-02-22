@@ -50,6 +50,11 @@ fun HomeScreen(
 
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
+    // Inicia o anúncio Bluetooth quando a HomeScreen é exibida
+    LaunchedEffect(Unit) {
+        bluetoothService.startAdvertising()
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
 
         BubbleAnimation(
