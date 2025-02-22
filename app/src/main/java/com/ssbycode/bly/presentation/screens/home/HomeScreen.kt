@@ -1,5 +1,6 @@
 package com.ssbycode.bly.presentation.screens.home
 
+import BubbleAnimation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,11 +20,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.core.content.ContextCompat
 import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import com.ssbycode.bly.domain.firebase.FirebaseManager
 import androidx.navigation.NavController
+import com.ssbycode.bly.animation.BubbleButton
 import com.ssbycode.bly.domain.bluetooth.BluetoothService
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
 import com.ssbycode.bly.presentation.navigation.Screen
@@ -47,6 +51,13 @@ fun HomeScreen(
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
     Box(modifier = modifier.fillMaxSize()) {
+
+        BubbleAnimation(
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.7f)
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -55,16 +66,20 @@ fun HomeScreen(
         ) {
             // Header
             Text(
+
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center, // Alinha o texto à direita
                 text = "Bly",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
+
             )
 
             // Main Button
-            Button(
+            BubbleButton(
                 onClick = {
                     if (isConnected) {
-                        navController.navigate(Screen.Chat.route) // Navega para a tela de chat diretamente
+                        navController.navigate(Screen.Chat.route)
                     } else {
                         if (newPeerId.isNotEmpty()) {
                             realTimeService.connectTo(newPeerId)
@@ -72,12 +87,14 @@ fun HomeScreen(
                     }
                 },
                 modifier = Modifier
+                    .padding(top = 250.dp)
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(text = titleBubbleButton)
-            }
+                    .height(200.dp),
+                text = titleBubbleButton,
+                bubbleColor = Color(0x7E2196F3), // Mais transparente
+                shineColor = Color.White.copy(alpha = 0.3f),
+
+            )
 
             // Connection Controls
             Column(

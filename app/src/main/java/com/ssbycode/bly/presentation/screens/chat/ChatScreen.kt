@@ -1,5 +1,9 @@
 package com.ssbycode.bly.presentation.screens.chat
 
+import BubbleAnimation
+import android.text.Layout
+import android.util.Log
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +17,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +35,12 @@ fun ChatScreen(
     val newMessage by viewModel.newMessage.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val connectedDevices by viewModel.connectedDevices.collectAsState()
+
+            BubbleAnimation(
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.7f)
+        )
 
     Column(
         modifier = Modifier
