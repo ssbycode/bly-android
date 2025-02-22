@@ -36,11 +36,11 @@ fun ChatScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     val connectedDevices by viewModel.connectedDevices.collectAsState()
 
-            BubbleAnimation(
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(0.7f)
-        )
+    BubbleAnimation(
+        modifier = Modifier
+            .fillMaxSize()
+            .alpha(0.7f)
+    )
 
     Column(
         modifier = Modifier
@@ -63,7 +63,7 @@ fun ChatScreen(
         // Input Bar
         MessageInputBar(
             message = newMessage,
-            onMessageChange = {  },
+            onMessageChange = { },
             onSendClick = { viewModel.broadcast() },
             isEnabled = !viewModel.sendButtonDisabled
         )

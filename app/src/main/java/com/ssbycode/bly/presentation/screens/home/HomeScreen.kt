@@ -94,7 +94,7 @@ fun HomeScreen(
                 bubbleColor = Color(0x7E2196F3), // Mais transparente
                 shineColor = Color.White.copy(alpha = 0.3f),
 
-            )
+                )
 
             // Connection Controls
             Column(
