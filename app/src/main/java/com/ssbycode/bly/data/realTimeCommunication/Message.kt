@@ -27,7 +27,7 @@ data class Message(
         isFromCurrentUser = true
     )
 
-    // Método dentro da classe para converter para JSON
+    // Metodo dentro da classe para converter para JSON
     fun toJson(): String {
         return Json.encodeToString(this)
     }

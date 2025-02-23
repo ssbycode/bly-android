@@ -1,10 +1,12 @@
 package com.ssbycode.bly.presentation.screens.chat
 
 import BubbleAnimation
+import BubblePatternBackground
 import android.text.Layout
 import android.util.Log
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowCircleUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
@@ -21,7 +24,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ssbycode.bly.data.realTimeCommunication.Message
 import com.ssbycode.bly.presentation.screens.chat.components.UserBubble
 
@@ -35,48 +41,50 @@ fun ChatScreen(
     val newMessage by viewModel.newMessage.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val connectedDevices by viewModel.connectedDevices.collectAsState()
+    val isDarkTheme = isSystemInDarkTheme()
 
-    BubbleAnimation(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .alpha(0.7f)
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
     ) {
-        // Header
-        GroupHeader(
-            isScanning = isScanning,
-            connectedDevices = connectedDevices,
-            onExitClick = { showExitDialog = true }
-        )
+        // BubblePatternBackground como plano de fundo
+        BubblePatternBackground(isDarkTheme = isDarkTheme)
 
-        // Messages
-        ChatMessages(
-            messages = messages,
-            modifier = Modifier.weight(1f)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+        ) {
+            // Header
+            GroupHeader(
+                isScanning = isScanning,
+                connectedDevices = connectedDevices,
+                onExitClick = { showExitDialog = true }
+            )
 
-        // Input Bar
-        MessageInputBar(
-            message = newMessage,
-            onMessageChange = { },
-            onSendClick = { viewModel.broadcast() },
-            isEnabled = !viewModel.sendButtonDisabled
-        )
-    }
+            // Messages
+            ChatMessages(
+                messages = messages,
+                modifier = Modifier.weight(1f)
+            )
 
-    if (showExitDialog) {
-        ExitDialog(
-            onDismiss = { showExitDialog = false },
-            onConfirm = {
-                viewModel.disconnect()
-                onDismiss()
-            }
-        )
+            // Input Bar
+            MessageInputBar(
+                message = newMessage,
+                onMessageChange = { viewModel.updateNewMessage(it) },
+                onSendClick = { viewModel.broadcast() },
+                isEnabled = !viewModel.sendButtonDisabled
+            )
+        }
+
+        if (showExitDialog) {
+            ExitDialog(
+                onDismiss = { showExitDialog = false },
+                onConfirm = {
+                    viewModel.disconnect()
+                    onDismiss()
+                }
+            )
+        }
     }
 }
 
@@ -86,11 +94,13 @@ private fun GroupHeader(
     connectedDevices: List<String>,
     onExitClick: () -> Unit
 ) {
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(Color(0xFFF5F2F2))
             .padding(horizontal = 16.dp, vertical = 6.dp)
+            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -106,9 +116,13 @@ private fun GroupHeader(
             }
 
             Text(
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
                 text = "Chat 🫧",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    letterSpacing = 2.sp // Espaçamento uniforme entre as letras
                 )
             )
 
@@ -135,7 +149,9 @@ private fun GroupHeader(
 private fun ChatMessages(
     messages: List<Message>,
     modifier: Modifier = Modifier
+
 ) {
+
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {
@@ -150,7 +166,8 @@ private fun ChatMessages(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    )
+    {
         items(
             items = messages,
             key = { it.id }
@@ -212,11 +229,14 @@ private fun MessageInputBar(
     onSendClick: () -> Unit,
     isEnabled: Boolean
 ) {
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .background(Color(0xFFF5F2F2))
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(bottom = 40.dp)
+            .windowInsetsPadding(WindowInsets.ime),// Adiciona padding na parte inferior quando o teclado está visível,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -225,6 +245,7 @@ private fun MessageInputBar(
             onValueChange = onMessageChange,
             modifier = Modifier
                 .weight(1f)
+                .height(50.dp)
                 .background(
                     MaterialTheme.colorScheme.surface,
                     RoundedCornerShape(20.dp)
@@ -232,7 +253,9 @@ private fun MessageInputBar(
             placeholder = { Text("Mensagem") },
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
             )
         )
 
@@ -244,7 +267,7 @@ private fun MessageInputBar(
             enabled = isEnabled
         ) {
             Icon(
-                imageVector = Icons.Default.Send,
+                imageVector = Icons.Filled.ArrowCircleUp,
                 contentDescription = "Send",
                 modifier = Modifier.size(32.dp),
                 tint = if (isEnabled)
@@ -252,6 +275,15 @@ private fun MessageInputBar(
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
+//            Icon(
+//                imageVector = Icons.Default.Send,
+//                contentDescription = "Send",
+//                modifier = Modifier.size(32.dp),
+//                tint = if (isEnabled)
+//                    MaterialTheme.colorScheme.primary
+//                else
+//                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+//            )
         }
     }
 }
@@ -282,6 +314,7 @@ private fun ExitDialog(
         }
     )
 }
+
 
 // Extension property
 val String.formattedDeviceID: String

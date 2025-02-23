@@ -97,6 +97,10 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:32.7.1"))
 
 
+    implementation ("androidx.compose.material:material-icons-extended:1.5.4") // Use a versão mais recente
+
+
+
     // Dependências do Firebase necessárias
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")

@@ -43,7 +43,7 @@ class ChatViewModel(
      * Envia uma mensagem para todos os dispositivos conectados via RTC (e futuramente via Bluetooth).
      */
     fun broadcast() {
-        if (!isConnected.value || newMessage.value.isEmpty()) return
+        if (isConnected.value || newMessage.value.isEmpty()) return
 
         val message = Message(
             content = newMessage.value,
@@ -63,6 +63,11 @@ class ChatViewModel(
                 Log.e("ChatViewModel", "Erro ao enviar mensagem: ${e.message}")
             }
         }
+    }
+
+    // Atualiza o estado do teclado quando é digitado.
+    fun updateNewMessage(message: String) {
+        _newMessage.value = message
     }
 
     /**

@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.ssbycode.bly.domain.firebase.FirebaseConfig
 import com.ssbycode.bly.domain.firebase.FirebaseManager
@@ -43,7 +44,7 @@ fun HomeScreen(
 ) {
     var showAlert by remember { mutableStateOf(false) }
     var alertMessage by remember { mutableStateOf("") }
-    var newPeerId by remember { mutableStateOf("959298FD-6A7C-494F-B4B0-9417CCEA626D") }//"020047A9-B62F-43D6-A430-7998E3A4A0FA") }
+    var newPeerId by remember { mutableStateOf("1CE05B3A-D7DF-71DD-0000-000000000000") }//"D2B02311-7F44-96AC-0000-000000000000") }
 
     val isConnected = realTimeService.connectedDevices.collectAsState().value.isNotEmpty()
     val connectedDevicesCount = realTimeService.connectedDevices.collectAsState().value.size
@@ -54,30 +55,32 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         bluetoothService.startAdvertising()
     }
+    BubbleAnimation(
+        modifier = Modifier
+            .fillMaxSize()
+            .alpha(0.7f)
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
 
-        BubbleAnimation(
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(0.7f)
-        )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(24.dp)
+                .windowInsetsPadding(WindowInsets.statusBars),
+            verticalArrangement = SpaceBetween
         ) {
             // Header
             Text(
-
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center, // Alinha o texto à direita
-                text = "Bly",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-
+                textAlign = TextAlign.Center,
+                text = "Bly 🫧",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 30.sp,
+                    letterSpacing = 2.sp // Espaçamento uniforme entre as letras
+                )
             )
 
             // Main Button
@@ -103,7 +106,8 @@ fun HomeScreen(
 
             // Connection Controls
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .padding(bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedTextField(
