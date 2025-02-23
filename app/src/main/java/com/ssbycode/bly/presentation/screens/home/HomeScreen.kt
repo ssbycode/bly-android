@@ -101,13 +101,15 @@ fun HomeScreen(
                 text = titleBubbleButton,
                 bubbleColor = Color(0x7E2196F3), // Mais transparente
                 shineColor = Color.White.copy(alpha = 0.3f),
-
-                )
+                onDragToChat = {
+                    navController.navigate(Screen.Chat.route) // Navegar para o chat
+                }
+            )
 
             // Connection Controls
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 30.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedTextField(

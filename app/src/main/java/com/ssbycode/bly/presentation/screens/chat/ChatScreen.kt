@@ -43,6 +43,8 @@ fun ChatScreen(
     val connectedDevices by viewModel.connectedDevices.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
 
+
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -245,10 +247,9 @@ private fun MessageInputBar(
             onValueChange = onMessageChange,
             modifier = Modifier
                 .weight(1f)
-                .height(50.dp)
                 .background(
                     MaterialTheme.colorScheme.surface,
-                    RoundedCornerShape(20.dp)
+                    RoundedCornerShape(25.dp)
                 ),
             placeholder = { Text("Mensagem") },
             colors = TextFieldDefaults.colors(

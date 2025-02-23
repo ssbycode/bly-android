@@ -2,6 +2,9 @@ package com.ssbycode.bly.animation
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -29,12 +32,16 @@ fun BubbleButton(
     text: String,
     elevation: Dp = 8.dp,
     bubbleColor: Color = Color(0x8862AEEC), // Cor mais transparente
-    shineColor: Color = Color.White.copy(alpha = 0.4f)
+    shineColor: Color = Color.White.copy(alpha = 0.4f),
+    onDragToChat: () -> Unit // Callback para quando o arrasto atinge o limite
 ) {
     val infiniteTransition = rememberInfiniteTransition()
     val textColor = if (isSystemInDarkTheme()) Color.White else Color.Black
-
     val density = LocalDensity.current
+
+    // Estado para controlar o arrasto
+    var offsetY by remember { mutableStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
 
     // Animação de pulsação
     val pulseScale by infiniteTransition.animateFloat(
@@ -71,14 +78,35 @@ fun BubbleButton(
         ), label = "float"
     )
 
+    // Modificador para detectar arrasto
+    val dragModifier = Modifier.draggable(
+        orientation = Orientation.Vertical,
+        onDragStarted = { isDragging = true },
+        onDragStopped = {
+            isDragging = false
+            if (offsetY < -50f) { // Limite para acionar a navegação
+               onDragToChat()
+            }
+           // offsetY = 0f // Resetar a posição após soltar
+        },
+        state = rememberDraggableState { delta ->
+            if (offsetY + delta <= 0f) {
+                offsetY += delta
+            }
+
+        }
+    )
+
     Button(
         onClick = onClick,
         modifier = modifier
             .height(56.dp)
             .graphicsLayer {
-                scaleX = pulseScale
-                scaleY = pulseScale
+                scaleX = if (isDragging) pulseScale * 0.9f else pulseScale
+                scaleY = if (isDragging) pulseScale * 0.9f else pulseScale
+                translationY = offsetY
             }
+            .then(dragModifier) // Adicionar o modificador de arrasto
             .drawWithCache {
                 val brush = Brush.radialGradient(
                     colors = listOf(
