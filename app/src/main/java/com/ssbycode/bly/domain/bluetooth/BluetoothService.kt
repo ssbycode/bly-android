@@ -43,21 +43,92 @@ class BluetoothService(
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val bluetoothLeScanner: BluetoothLeScanner? = bluetoothAdapter?.bluetoothLeScanner
+    private val bluetoothAdvertiser: BluetoothLeAdvertiser? = bluetoothAdapter?.bluetoothLeAdvertiser
 
-    // Adicionado para o serviço GATT
-    private val serviceUUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890AB")
+    // UUIDs para o serviço GATT e característica
+    private val serviceUUID: ParcelUuid = ParcelUuid.fromString("12345678-1234-1234-1234-1234567890ab")
     private val characteristicUUID: UUID = UUID.fromString("87654321-4321-4321-4321-BA0987654321")
 
     private val connectedDevices = mutableMapOf<String, BluetoothDevice>()
     private val discoveredDevices = mutableListOf<BluetoothDevice>()
 
     private var isScanning = false
-
     private val handler = Handler(Looper.getMainLooper())
     private val scanPeriod: Long = 10000 // 10 segundos para escaneamento
 
+    // Callback do GATT server
+    private val gattCallback = object : BluetoothGattServerCallback() {
+        override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
+            Log.d(TAG, "Connection state changed: $newState")
+        }
+
+        override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+            Log.d(TAG, "Service added: ${service?.uuid}")
+        }
+
+        override fun onCharacteristicReadRequest(
+            device: BluetoothDevice?,
+            requestId: Int,
+            offset: Int,
+            characteristic: BluetoothGattCharacteristic?
+        ) {
+            // Exemplo: responde à leitura com sucesso (ajuste conforme sua lógica)
+            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
+        }
+
+        override fun onCharacteristicWriteRequest(
+            device: BluetoothDevice?,
+            requestId: Int,
+            characteristic: BluetoothGattCharacteristic?,
+            preparedWrite: Boolean,
+            responseNeeded: Boolean,
+            offset: Int,
+            value: ByteArray?
+        ) {
+            // Exemplo: processa a escrita e responde, se necessário
+            if (responseNeeded) {
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+            }
+        }
+    }
+
+    // Inicializa o GATT server usando o contexto
+    private val gattServer: BluetoothGattServer by lazy {
+        bluetoothManager?.openGattServer(context, gattCallback)
+            ?: throw IllegalStateException("Não foi possível abrir o GATT Server")
+    }
+
     /**
-     * Callback para o anuncio BLE.
+     * Inicializa o GATT server, adicionando o serviço e a característica com seus respectivos
+     * UUIDs. Aqui também adicionamos um descriptor para suportar notificações.
+     */
+    fun initializeGattServer() {
+        val service = BluetoothGattService(serviceUUID.uuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+
+        // Propriedades e permissões para a característica
+        val properties = BluetoothGattCharacteristic.PROPERTY_READ or
+                BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY
+        val permissions = BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
+
+        val characteristic = BluetoothGattCharacteristic(characteristicUUID, properties, permissions)
+
+        // Adiciona o Client Characteristic Configuration Descriptor para notificações
+        val configDescriptor = BluetoothGattDescriptor(
+            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
+            BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+        )
+        characteristic.addDescriptor(configDescriptor)
+
+        service.addCharacteristic(characteristic)
+
+        val serviceAdded = gattServer.addService(service)
+        Log.d(TAG, "Serviço GATT adicionado: $serviceAdded")
+    }
+
+    /**
+     * Callback para o anúncio BLE.
      */
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
@@ -109,7 +180,6 @@ class BluetoothService(
                 ScanCallback.SCAN_FAILED_SCANNING_TOO_FREQUENTLY -> "⚠️ O escaneamento está sendo iniciado com muita frequência. Aguarde um pouco."
                 else -> "❌ Erro desconhecido ao tentar escanear."
             }
-
             Log.e(TAG, errorMessage)
         }
     }
@@ -138,28 +208,32 @@ class BluetoothService(
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
         }
-
         return requiredPermissions.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     /**
-     * Inicializa o Bluetooth, se as permissões forem concedidas e o Bluetooth estiver ativado.
+     * Inicializa o Bluetooth se as permissões forem concedidas e o Bluetooth estiver ativado.
+     * Aqui também inicializamos o GATT server com o serviço e característica.
      */
     fun initializeBluetooth() {
         if (!hasBluetoothPermissions()) {
-            Log.e("BluetoothService", "Permissões Bluetooth não concedidas.")
+            Log.e(TAG, "Permissões Bluetooth não concedidas.")
             return
         }
 
         if (!isBluetoothEnabled()) {
-            Log.e("BluetoothService", "Bluetooth está desativado.")
+            Log.e(TAG, "Bluetooth está desativado.")
             return
         }
 
-        Log.d("BluetoothService", "Bluetooth está pronto para uso.")
-        // Aqui você pode iniciar a lógica de escaneamento/conexão
+        Log.d(TAG, "Bluetooth está pronto para uso.")
+        // Configura o nome do dispositivo, se necessário
+        bluetoothAdapter?.name = localDeviceID.formattedDeviceID//Build.MANUFACTURER
+
+        // Inicializa o GATT server e adiciona o serviço
+        initializeGattServer()
     }
 
     /**
@@ -187,59 +261,46 @@ class BluetoothService(
         bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
         Log.d(TAG, "🔍 Iniciando escaneamento BLE...")
 
-        // Para automaticamente após `scanPeriod` milissegundos
+        // Para automaticamente após 'scanPeriod' milissegundos
         handler.postDelayed({ stopScanning() }, scanPeriod)
     }
 
     fun stopScanning() {
         if (isScanning) {
-
-
-            // implementar a funcao de parar o escaneamento
+            bluetoothLeScanner?.stopScan(scanCallback)
             isScanning = false
             Log.d(TAG, "🛑 Escaneamento parado")
         }
     }
 
+    /**
+     * Inicia o advertising BLE.
+     */
     fun startAdvertising() {
         if (!isBluetoothEnabled()) {
             Log.d(TAG, "❌ Bluetooth não está ativo para advertising")
             return
         }
 
-        Log.d(TAG, "📢 Iniciando Advertising...")
-
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_LOW)
             .setConnectable(true)
-            .setTimeout(3)
             .build()
 
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false) // Removemos para reduzir tamanho
-            .addServiceUuid(ParcelUuid(serviceUUID)) // Certifique-se de que é um UUID curto
-            .addManufacturerData(0xFFFF, localDeviceID.formattedDeviceID.toByteArray(Charsets.UTF_8)) // Adiciona o ID no advertising
+        val advertiseData = AdvertiseData.Builder()
+            .setIncludeDeviceName(true)
+            .addServiceUuid(serviceUUID)
             .build()
-//
-//        val data = AdvertiseData.Builder()
-//            .setIncludeDeviceName(false) // Evita conflito com o nome padrão do dispositivo
-//            .addServiceUuid(ParcelUuid(serviceUUID))
-//            .setIncludeTxPowerLevel(true) // Opcional, melhora detecção do sinal
-//            .addManufacturerData(0xFFFF, localDeviceID.formattedDeviceID.toByteArray(Charsets.UTF_8)) // Adiciona o ID no advertising
-//            .build()
 
-        bluetoothAdapter?.bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
-        Log.d(TAG, "✅ Advertising iniciado com ID: ${bluetoothAdapter?.name}, deviceID: ${localDeviceID.formattedDeviceID}")
-
-        val payloadSize = 2 + localDeviceID.formattedDeviceID.toByteArray(Charsets.UTF_8).size + 2 + 16
-        Log.d(TAG, "Tamanho estimado do advertising: $payloadSize bytes")
+        bluetoothAdvertiser?.startAdvertising(settings, advertiseData, advertiseCallback)
     }
-
 
     companion object {
         private const val TAG = "BluetoothService"
     }
 }
+
 
 //class BluetoothService(
 //    private val context: Context,

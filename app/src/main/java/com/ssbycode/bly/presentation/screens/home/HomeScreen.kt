@@ -50,11 +50,6 @@ fun HomeScreen(
 
     val titleBubbleButton = if (isConnected) "Entrar na Bolha" else "Criar Bolha"
 
-    // Inicia o anúncio Bluetooth quando a HomeScreen é exibida
-    LaunchedEffect(Unit) {
-        bluetoothService.startAdvertising()
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
 
         BubbleAnimation(
@@ -71,35 +66,37 @@ fun HomeScreen(
         ) {
             // Header
             Text(
-
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center, // Alinha o texto à direita
                 text = "Bly",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
-
             )
 
-            // Main Button
-            BubbleButton(
-                onClick = {
-                    if (isConnected) {
-                        navController.navigate(Screen.Chat.route)
-                    } else {
-                        if (newPeerId.isNotEmpty()) {
-                            realTimeService.connectTo(newPeerId)
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .padding(top = 250.dp)
-                    .fillMaxWidth()
-                    .height(200.dp),
-                text = titleBubbleButton,
-                bubbleColor = Color(0x7E2196F3), // Mais transparente
-                shineColor = Color.White.copy(alpha = 0.3f),
-
-                )
+            Button({
+                bluetoothService.startAdvertising()
+            }) {
+                Text("Iniciar Bolha")
+            }
+//            // Main Button
+//            BubbleButton(
+//                onClick = {
+//                    if (isConnected) {
+//                        navController.navigate(Screen.Chat.route)
+//                    } else {
+//                        if (newPeerId.isNotEmpty()) {
+//                            bluetoothService.stopScanning()
+//                        }
+//                    }
+//                },
+//                modifier = Modifier
+//                    .padding(top = 250.dp)
+//                    .fillMaxWidth()
+//                    .height(200.dp),
+//                text = titleBubbleButton,
+//                bubbleColor = Color(0x7E2196F3), // Mais transparente
+//                shineColor = Color.White.copy(alpha = 0.3f),
+//                )
 
             // Connection Controls
             Column(
