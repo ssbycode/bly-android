@@ -6,7 +6,6 @@ import android.provider.Settings
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import com.ssbycode.bly.domain.bluetooth.BluetoothService
-import com.ssbycode.bly.domain.bluetooth.formattedDeviceID
 import com.ssbycode.bly.domain.communication.SignalingService
 import com.ssbycode.bly.domain.firebase.FirebaseManager
 import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService

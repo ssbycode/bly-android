@@ -1,7 +1,6 @@
 package com.ssbycode.bly.domain.bluetooth
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
@@ -10,60 +9,62 @@ import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanSettings
-//import android.content.Context
 import android.content.pm.PackageManager
 import android.bluetooth.le.ScanResult
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
-//import android.util.Log
-import androidx.core.app.ActivityCompat
 import java.util.*
-import com.ssbycode.bly.domain.realTimeCommunication.RealTimeService
-
-import android.app.Service
-import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Context
-import android.content.Intent
-import android.os.Binder
 import android.os.Build
-import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
-
-val String.formattedDeviceID: String
-    get() = this.split("-").firstOrNull() ?: this
-
+import com.ssbycode.bly.formattedDeviceID
 
 class BluetoothService(
     private val context: Context,
     private val localDeviceID: String
 ) {
+    // Gerenciadores e adaptadores Bluetooth
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val bluetoothLeScanner: BluetoothLeScanner? = bluetoothAdapter?.bluetoothLeScanner
     private val bluetoothAdvertiser: BluetoothLeAdvertiser? = bluetoothAdapter?.bluetoothLeAdvertiser
 
-    // UUIDs para o serviço GATT e característica
-    private val serviceUUID: ParcelUuid = ParcelUuid.fromString("12345678-1234-1234-1234-1234567890ab")
+    // UUIDs para serviço e característica GATT
+    private val serviceUUID: ParcelUuid = ParcelUuid.fromString("12345678-1234-1234-1234-1234567890AB")
     private val characteristicUUID: UUID = UUID.fromString("87654321-4321-4321-4321-BA0987654321")
 
-    private val connectedDevices = mutableMapOf<String, BluetoothDevice>()
-    private val discoveredDevices = mutableListOf<BluetoothDevice>()
+    // Mapas e listas para gerenciar dispositivos
+    val connectedDevices: MutableMap<String, String> = mutableMapOf()
+    val discoveredDevices: MutableList<BluetoothDevice> = mutableListOf()
+    val candidateDevices: MutableList<String> = mutableListOf()
+    val disconnectedDevices: MutableList<BluetoothDevice> = mutableListOf()
 
-    private var isScanning = false
+    var isScanning: Boolean = false
+        private set
+
     private val handler = Handler(Looper.getMainLooper())
-    private val scanPeriod: Long = 10000 // 10 segundos para escaneamento
+    private val scanPeriod: Long = 10_000 // 10 segundos
 
-    // Callback do GATT server
-    private val gattCallback = object : BluetoothGattServerCallback() {
+    // Gerencia conexões GATT como central
+    private val gattClients = mutableMapOf<String, BluetoothGatt>()
+
+    // Lógica de reconexão
+    private var reconnectionTimer: Timer? = null
+    private val maxRetries = 5
+    private val currentRetries = mutableMapOf<String, Int>()
+    private val retryInterval: Long = 500 // em milissegundos
+
+    // --- GATT Server (Android como periférico) ---
+    private val gattServerCallback = object : BluetoothGattServerCallback() {
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
-            Log.d(TAG, "Connection state changed: $newState")
+            Log.d(TAG, "GATT Server - Estado da conexão: $newState para ${device?.address}")
         }
 
         override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
-            Log.d(TAG, "Service added: ${service?.uuid}")
+            Log.d(TAG, "GATT Server - Serviço adicionado: ${service?.uuid}")
         }
 
         override fun onCharacteristicReadRequest(
@@ -72,7 +73,7 @@ class BluetoothService(
             offset: Int,
             characteristic: BluetoothGattCharacteristic?
         ) {
-            // Exemplo: responde à leitura com sucesso (ajuste conforme sua lógica)
+            // Responde à leitura com sucesso
             gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
         }
 
@@ -85,27 +86,68 @@ class BluetoothService(
             offset: Int,
             value: ByteArray?
         ) {
-            // Exemplo: processa a escrita e responde, se necessário
-            if (responseNeeded) {
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+            // *** Início das alterações para troca de ID via GATT Server ***
+            if (value != null) {
+                val receivedString = String(value, Charsets.UTF_8)
+                Log.d(TAG, "GATT Server - Recebeu escrita: $receivedString de ${device?.address}")
+
+                if (receivedString != "CONNECTED") {
+                    if (candidateDevices.contains(receivedString)) {
+                        Log.d(TAG, "Dispositivo já conectado, ignorando...")
+                        if (responseNeeded) {
+                            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_WRITE_NOT_PERMITTED, offset, null)
+                        }
+                    } else {
+                        Log.i(TAG, "🔗 Novo dispositivo remoto enviou ID: $receivedString")
+                        device?.address?.let { candidateDevices.add(it) }
+                        // Após um breve delay, notifica o dispositivo com o nosso ID
+                        val response = localDeviceID.toByteArray(Charsets.UTF_8)
+                        handler.postDelayed({
+                            // Atualiza o valor da característica para disparar a notificação
+                            val service = gattServer.services.find { it.uuid == serviceUUID.uuid }
+                            val customCharacteristic = service?.getCharacteristic(characteristicUUID)
+                            if (customCharacteristic != null && device != null) {
+                                // Dispara uma notificação para o dispositivo (equivalente a onCharacteristicChanged)
+                                gattServer.notifyCharacteristicChanged(device, customCharacteristic, false)
+                            }
+                        }, 300)
+                        if (responseNeeded) {
+                            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, response)
+                        }
+                    }
+                } else {
+                    // Se recebeu "CONNECTED", responde com sucesso e muda o modo para scan
+                    if (responseNeeded) {
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
+                    }
+                    stopAdvertising()
+                    startScanning()
+                }
+                Log.i(TAG, "✅ Resposta de escrita enviada")
+            } else {
+                if (responseNeeded) {
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                }
             }
+            // *** Fim das alterações para troca de ID via GATT Server ***
         }
     }
 
-    // Inicializa o GATT server usando o contexto
+    // Inicializa o GATT Server usando o contexto
     private val gattServer: BluetoothGattServer by lazy {
-        bluetoothManager?.openGattServer(context, gattCallback)
+        bluetoothManager?.openGattServer(context, gattServerCallback)
             ?: throw IllegalStateException("Não foi possível abrir o GATT Server")
     }
 
     /**
-     * Inicializa o GATT server, adicionando o serviço e a característica com seus respectivos
-     * UUIDs. Aqui também adicionamos um descriptor para suportar notificações.
+     * Inicializa o GATT Server com o serviço e a característica para troca de ID.
      */
     fun initializeGattServer() {
-        val service = BluetoothGattService(serviceUUID.uuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val service = BluetoothGattService(
+            serviceUUID.uuid,
+            BluetoothGattService.SERVICE_TYPE_PRIMARY
+        )
 
-        // Propriedades e permissões para a característica
         val properties = BluetoothGattCharacteristic.PROPERTY_READ or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY
@@ -120,40 +162,120 @@ class BluetoothService(
             BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
         )
         characteristic.addDescriptor(configDescriptor)
-
         service.addCharacteristic(characteristic)
 
         val serviceAdded = gattServer.addService(service)
-        Log.d(TAG, "Serviço GATT adicionado: $serviceAdded")
+        Log.d(TAG, "GATT service adicionado: $serviceAdded")
     }
 
-    /**
-     * Callback para o anúncio BLE.
-     */
+    // --- GATT Client (Android como central) ---
+    private val gattClientCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            val deviceAddress = gatt.device.address
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.d(TAG, "GATT Client - Conectado a ${gatt.device.name} ($deviceAddress)")
+                gattClients[deviceAddress] = gatt
+                gatt.discoverServices()
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.d(TAG, "GATT Client - Desconectado de ${gatt.device.name} ($deviceAddress)")
+                connectedDevices.remove(deviceAddress)
+                discoveredDevices.remove(gatt.device)
+                disconnectedDevices.add(gatt.device)
+                gattClients.remove(deviceAddress)
+                startReconnectionAttempts(gatt.device)
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                val service = gatt.services.find { it.uuid == serviceUUID.uuid }
+                if (service != null) {
+                    val characteristic = service.getCharacteristic(characteristicUUID)
+                    if (characteristic != null) {
+                        // *** Início das alterações para troca de ID via GATT Client ***
+                        Log.d(TAG, "🔍 Característica descoberta: ${characteristic.uuid}")
+                        // Habilita notificações para a característica
+                        gatt.setCharacteristicNotification(characteristic, true)
+                        // Envia o nosso ID para o dispositivo conectado
+                        val data = localDeviceID.toByteArray(Charsets.UTF_8)
+                        characteristic.value = data
+                        val writeSuccess = gatt.writeCharacteristic(characteristic)
+                        Log.d(TAG, "📤 Enviando ID para o dispositivo conectado: $localDeviceID, sucesso: $writeSuccess")
+                        // Registra o dispositivo como conectado
+                        connectedDevices[gatt.device.address] = localDeviceID
+                        // *** Fim das alterações para troca de ID via GATT Client ***
+                    }
+                }
+            } else {
+                Log.e(TAG, "❌ Erro ao descobrir serviços: status $status")
+            }
+        }
+
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            // *** Início do processamento do ID recebido (equivalente ao didUpdateValueFor) ***
+            val data = characteristic.value
+            if (data == null) {
+                Log.e(TAG, "❌ Erro: Característica sem dados")
+                return
+            }
+            val remoteDeviceID = String(data, Charsets.UTF_8)
+            // Verifica se o ID recebido é válido e não está duplicado
+            if (remoteDeviceID.isEmpty() || connectedDevices.values.contains(remoteDeviceID)) {
+                stopScanning()
+                startAdvertising()
+                Log.e(TAG, "⚠️ Dados inválidos ou dispositivo já conectado")
+                return
+            }
+            Log.d(TAG, "📥 Dados recebidos: $remoteDeviceID")
+            // Interrompe o escaneamento e inicia o advertising
+            stopScanning()
+            startAdvertising()
+            Log.i(TAG, "📣 Parando de scanear e começando a anunciar")
+            // Atualiza a lista de dispositivos conectados
+            connectedDevices[gatt.device.address] = remoteDeviceID
+            // Envia a confirmação "CONNECTED" de volta
+            characteristic.value = "CONNECTED".toByteArray(Charsets.UTF_8)
+            val writeSuccess = gatt.writeCharacteristic(characteristic)
+            Log.d(TAG, "GATT Client - Escrevendo 'CONNECTED', sucesso: $writeSuccess")
+            // Após um breve delay, acione a lógica de conexão WebRTC (ou similar)
+            handler.postDelayed({
+                Log.d(TAG, "Conectando ao dispositivo remoto: $remoteDeviceID")
+                // Exemplo: realTimeService?.connect(to = remoteDeviceID)
+            }, 300)
+            // *** Fim do processamento do ID recebido ***
+        }
+
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Log.d(TAG, "GATT Client - Escrita realizada com sucesso em ${gatt.device.address}")
+            } else {
+                Log.e(TAG, "GATT Client - Erro ao escrever em ${gatt.device.address}, status: $status")
+            }
+        }
+    }
+
+    // --- Advertising e Escaneamento ---
+
+    // Callback para Advertising (quando atuando como periférico)
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-            super.onStartSuccess(settingsInEffect)
-            Log.d(TAG, "✅ Advertising iniciado com sucesso")
+            Log.d(TAG, "Advertising iniciado com sucesso")
         }
 
         override fun onStartFailure(errorCode: Int) {
-            super.onStartFailure(errorCode)
-            Log.e(TAG, "❌ Falha ao iniciar advertising: $errorCode")
+            Log.e(TAG, "Advertising falhou com o código: $errorCode")
         }
     }
 
-    /**
-     * Callback para o escaneamento BLE.
-     */
+    // Callback para escaneamento (quando atuando como central)
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val device: BluetoothDevice? = result.device
+            val device = result.device
             if (device != null && !discoveredDevices.contains(device)) {
                 discoveredDevices.add(device)
-                Log.d(
-                    TAG,
-                    "📡 Dispositivo encontrado: ${device.name ?: "Desconhecido"} - ${device.address}"
-                )
+                Log.d(TAG, "Dispositivo descoberto: ${device.name ?: "Desconhecido"} - ${device.address}")
+                // Tenta conectar como central
+                device.connectGatt(context, false, gattClientCallback)
             }
         }
 
@@ -162,37 +284,148 @@ class BluetoothService(
                 val device = result.device
                 if (!discoveredDevices.contains(device)) {
                     discoveredDevices.add(device)
-                    Log.d(
-                        TAG,
-                        "📡 (Batch) Dispositivo encontrado: ${device.name ?: "Desconhecido"} - ${device.address}"
-                    )
+                    Log.d(TAG, "Dispositivo (batch) descoberto: ${device.name ?: "Desconhecido"} - ${device.address}")
+                    device.connectGatt(context, false, gattClientCallback)
                 }
             }
         }
 
         override fun onScanFailed(errorCode: Int) {
-            val errorMessage = when (errorCode) {
-                ScanCallback.SCAN_FAILED_ALREADY_STARTED -> "⚠️ O escaneamento já foi iniciado anteriormente."
-                ScanCallback.SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "❌ Falha ao registrar a aplicação para escanear."
-                ScanCallback.SCAN_FAILED_INTERNAL_ERROR -> "❌ Erro interno desconhecido ao iniciar o escaneamento."
-                ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED -> "❌ O dispositivo não suporta essa funcionalidade de escaneamento."
-                ScanCallback.SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES -> "⚠️ Poucos recursos disponíveis para escanear."
-                ScanCallback.SCAN_FAILED_SCANNING_TOO_FREQUENTLY -> "⚠️ O escaneamento está sendo iniciado com muita frequência. Aguarde um pouco."
-                else -> "❌ Erro desconhecido ao tentar escanear."
-            }
-            Log.e(TAG, errorMessage)
+            Log.e(TAG, "Falha no escaneamento com código: $errorCode")
         }
     }
 
     /**
-     * Verifica se o Bluetooth está disponível e ativado.
+     * Inicializa o Bluetooth verificando permissões e estado, e configura o GATT Server.
+     */
+    fun initializeBluetooth() {
+        if (!hasBluetoothPermissions()) {
+            Log.e(TAG, "Permissões Bluetooth não concedidas")
+            return
+        }
+        if (!isBluetoothEnabled()) {
+            Log.e(TAG, "Bluetooth está desativado")
+            return
+        }
+        Log.d(TAG, "Bluetooth pronto para uso")
+        // Define o nome do dispositivo como o localDeviceID
+        bluetoothAdapter?.name = localDeviceID.formattedDeviceID
+        initializeGattServer()
+    }
+
+    /**
+     * Inicia o escaneamento de dispositivos BLE.
+     */
+    fun startScanning() {
+        if (!isBluetoothEnabled() || !hasBluetoothPermissions()) {
+            Log.e(TAG, "Bluetooth desligado ou sem permissões")
+            return
+        }
+        if (isScanning) {
+            Log.w(TAG, "Escaneamento já está em andamento")
+            return
+        }
+        discoveredDevices.clear()
+        isScanning = true
+        val scanFilters = listOf<ScanFilter>() // Adicione filtros conforme necessário
+        val scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+        bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
+        Log.d(TAG, "Escaneamento BLE iniciado")
+        handler.postDelayed({ stopScanning() }, scanPeriod)
+    }
+
+    /**
+     * Para o escaneamento de dispositivos BLE.
+     */
+    fun stopScanning() {
+        if (isScanning) {
+            bluetoothLeScanner?.stopScan(scanCallback)
+            isScanning = false
+            Log.d(TAG, "Escaneamento BLE parado")
+        }
+    }
+
+    /**
+     * Inicia o advertising BLE.
+     */
+    fun startAdvertising() {
+        if (!isBluetoothEnabled()) {
+            Log.d(TAG, "Bluetooth não está ativo para advertising")
+            return
+        }
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_LOW)
+            .setConnectable(true)
+            .build()
+        val advertiseData = AdvertiseData.Builder()
+            .setIncludeDeviceName(true)
+            .addServiceUuid(serviceUUID)
+            .build()
+        bluetoothAdvertiser?.startAdvertising(settings, advertiseData, advertiseCallback)
+        Log.d(TAG, "Advertising iniciado com o ID: $localDeviceID")
+    }
+
+    /**
+     * Para o advertising BLE.
+     */
+    fun stopAdvertising() {
+        bluetoothAdvertiser?.stopAdvertising(advertiseCallback)
+        Log.d(TAG, "Advertising parado")
+    }
+
+    /**
+     * Desconecta todos os dispositivos conectados.
+     */
+    fun disconnectAll() {
+        discoveredDevices.forEach { device ->
+            gattClients[device.address]?.disconnect()
+            connectedDevices.remove(device.address)
+        }
+        discoveredDevices.clear()
+        Log.d(TAG, "Todos os dispositivos foram desconectados")
+    }
+
+    /**
+     * Tenta reconectar a um dispositivo desconectado, com tentativas limitadas.
+     */
+    private fun startReconnectionAttempts(device: BluetoothDevice) {
+        val deviceId = device.address
+        currentRetries[deviceId] = 0
+        reconnectionTimer?.cancel()
+        reconnectionTimer = Timer()
+        reconnectionTimer?.scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                val attempts = currentRetries[deviceId] ?: 0
+                if (attempts < maxRetries) {
+                    Log.d(TAG, "Tentativa ${attempts + 1} de reconexão para ${device.name ?: "Desconhecido"}")
+                    currentRetries[deviceId] = attempts + 1
+                    device.connectGatt(context, false, gattClientCallback)
+                } else {
+                    Log.d(TAG, "Máximo de tentativas atingido para ${device.name ?: "Desconhecido"}")
+                    currentRetries.remove(deviceId)
+                    reconnectionTimer?.cancel()
+                    reconnectionTimer = null
+                    if (connectedDevices.isEmpty()) {
+                        stopScanning()
+                        startAdvertising()
+                    }
+                }
+            }
+        }, 0, retryInterval)
+    }
+
+    /**
+     * Verifica se o Bluetooth está ativo.
      */
     fun isBluetoothEnabled(): Boolean {
         return bluetoothAdapter?.isEnabled == true
     }
 
     /**
-     * Verifica se todas as permissões Bluetooth necessárias estão concedidas.
+     * Verifica se as permissões necessárias estão concedidas.
      */
     fun hasBluetoothPermissions(): Boolean {
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -213,93 +446,496 @@ class BluetoothService(
         }
     }
 
-    /**
-     * Inicializa o Bluetooth se as permissões forem concedidas e o Bluetooth estiver ativado.
-     * Aqui também inicializamos o GATT server com o serviço e característica.
-     */
-    fun initializeBluetooth() {
-        if (!hasBluetoothPermissions()) {
-            Log.e(TAG, "Permissões Bluetooth não concedidas.")
-            return
-        }
-
-        if (!isBluetoothEnabled()) {
-            Log.e(TAG, "Bluetooth está desativado.")
-            return
-        }
-
-        Log.d(TAG, "Bluetooth está pronto para uso.")
-        // Configura o nome do dispositivo, se necessário
-        bluetoothAdapter?.name = localDeviceID.formattedDeviceID//Build.MANUFACTURER
-
-        // Inicializa o GATT server e adiciona o serviço
-        initializeGattServer()
-    }
-
-    /**
-     * Inicia o escaneamento de dispositivos BLE.
-     */
-    fun startScanning() {
-        if (!isBluetoothEnabled() || !hasBluetoothPermissions()) {
-            Log.e(TAG, "❌ Bluetooth desligado ou sem permissões")
-            return
-        }
-
-        if (isScanning) {
-            Log.w(TAG, "⚠️ O escaneamento já está em andamento.")
-            return
-        }
-
-        discoveredDevices.clear()
-        isScanning = true
-
-        val scanFilters = listOf<ScanFilter>() // Pode adicionar filtros específicos
-        val scanSettings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
-        Log.d(TAG, "🔍 Iniciando escaneamento BLE...")
-
-        // Para automaticamente após 'scanPeriod' milissegundos
-        handler.postDelayed({ stopScanning() }, scanPeriod)
-    }
-
-    fun stopScanning() {
-        if (isScanning) {
-            bluetoothLeScanner?.stopScan(scanCallback)
-            isScanning = false
-            Log.d(TAG, "🛑 Escaneamento parado")
-        }
-    }
-
-    /**
-     * Inicia o advertising BLE.
-     */
-    fun startAdvertising() {
-        if (!isBluetoothEnabled()) {
-            Log.d(TAG, "❌ Bluetooth não está ativo para advertising")
-            return
-        }
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_LOW)
-            .setConnectable(true)
-            .build()
-
-        val advertiseData = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .addServiceUuid(serviceUUID)
-            .build()
-
-        bluetoothAdvertiser?.startAdvertising(settings, advertiseData, advertiseCallback)
-    }
-
     companion object {
         private const val TAG = "BluetoothService"
     }
 }
+//class BluetoothService(
+//    private val context: Context,
+//    private val localDeviceID: String
+//) {
+//    // Gerenciadores do sistema
+//    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+//    private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
+//    private val bluetoothLeScanner: BluetoothLeScanner? = bluetoothAdapter?.bluetoothLeScanner
+//    private val bluetoothAdvertiser: BluetoothLeAdvertiser? =
+//        bluetoothAdapter?.bluetoothLeAdvertiser
+//
+//    // UUIDs para o serviço e característica do GATT
+//    private val serviceUUID: ParcelUuid =
+//        ParcelUuid.fromString("12345678-1234-1234-1234-1234567890ab")
+//    private val characteristicUUID: UUID =
+//        UUID.fromString("87654321-4321-4321-4321-BA0987654321")
+//
+//    // Mapeamentos e listas para gerenciamento de dispositivos
+//    // No iOS: [UUID: String] para dispositivos conectados; aqui usamos endereço como chave e armazenamos o ID remoto
+//    val connectedDevices: MutableMap<String, String> = mutableMapOf()
+//    val discoveredDevices: MutableList<BluetoothDevice> = mutableListOf()
+//    val candidateDevices: MutableList<String> = mutableListOf()
+//    val disconnectedDevices: MutableList<BluetoothDevice> = mutableListOf()
+//
+//    // Indicador de escaneamento
+//    var isScanning: Boolean = false
+//        private set
+//
+//    // Handler para controlar o tempo de escaneamento
+//    private val handler = Handler(Looper.getMainLooper())
+//    private val scanPeriod: Long = 10_000 // 10 segundos
+//
+//    // Lógica de reconexão
+//    private var reconnectionTimer: Timer? = null
+//    private val maxRetries = 5
+//    private val currentRetries = mutableMapOf<String, Int>()
+//    private val retryInterval: Long = 500 // milissegundos
+//
+//    // Mapear conexões GATT (para o papel central)
+//    private val gattClients = mutableMapOf<String, BluetoothGatt>()
+//
+//    // Inicializa o GATT Server usando o contexto
+//    private val gattServer: BluetoothGattServer by lazy {
+//        bluetoothManager?.openGattServer(context, gattServerCallback)
+//            ?: throw IllegalStateException("Não foi possível abrir o GATT Server")
+//    }
+//
+//    // --- GATT Server (Papel Periférico) ---
+//
+//    // Callback do GATT Server
+//    private val gattServerCallback = object : BluetoothGattServerCallback() {
+//        override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
+//            Log.d(TAG, "GATT Server - Estado da conexão: $newState para ${device?.address}")
+//        }
+//
+//        override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+//            Log.d(TAG, "GATT Server - Serviço adicionado: ${service?.uuid}")
+//        }
+//
+//        override fun onCharacteristicReadRequest(
+//            device: BluetoothDevice?,
+//            requestId: Int,
+//            offset: Int,
+//            characteristic: BluetoothGattCharacteristic?
+//        ) {
+//            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
+//        }
+//
+//        override fun onCharacteristicWriteRequest(
+//            device: BluetoothDevice?,
+//            requestId: Int,
+//            characteristic: BluetoothGattCharacteristic?,
+//            preparedWrite: Boolean,
+//            responseNeeded: Boolean,
+//            offset: Int,
+//            value: ByteArray?
+//        ) {
+//            // --- Equivalente ao didReceiveWrite ---
+//            if (value != null) {
+//                val receivedString = String(value, Charsets.UTF_8)
+//                Log.d(TAG, "GATT Server - Recebeu escrita: $receivedString de ${device?.address}")
+//                if (receivedString != "CONNECTED") {
+//                    if (candidateDevices.contains(receivedString)) {
+//                        Log.d(TAG, "Dispositivo já conectado, ignorando...")
+//                        Log.d(TAG, "Iniciando escaneamento de dispositivos...")
+//                        if (responseNeeded) {
+//                            gattServer.sendResponse(
+//                                device,
+//                                requestId,
+//                                BluetoothGatt.GATT_WRITE_NOT_PERMITTED,
+//                                offset,
+//                                null
+//                            )
+//                        }
+//                    } else {
+//                        Log.i(TAG, "🔗 Novo dispositivo remoto enviou ID: $receivedString")
+//                        device?.address?.let { candidateDevices.add(it) }
+//                        // Se houver uma característica customizada disponível para notificar, utilize-a
+//                        val service = gattServer.services.find { it.uuid == serviceUUID.uuid }
+//                        val customCharacteristic = service?.getCharacteristic(characteristicUUID)
+//                        val response = localDeviceID.toByteArray(Charsets.UTF_8)
+//                        handler.postDelayed({
+//                            if (customCharacteristic != null && device != null) {
+//                                // Notifica o dispositivo conectado, acionando onCharacteristicChanged no central
+//                                gattServer.notifyCharacteristicChanged(
+//                                    device,
+//                                    customCharacteristic,
+//                                    false
+//                                )
+//                            }
+//                        }, 300)
+//                        if (responseNeeded) {
+//                            gattServer.sendResponse(
+//                                device,
+//                                requestId,
+//                                BluetoothGatt.GATT_SUCCESS,
+//                                offset,
+//                                response
+//                            )
+//                        }
+//                    }
+//                } else {
+//                    if (responseNeeded) {
+//                        gattServer.sendResponse(
+//                            device,
+//                            requestId,
+//                            BluetoothGatt.GATT_SUCCESS,
+//                            offset,
+//                            null
+//                        )
+//                    }
+//                    stopAdvertising()
+//                    startScanning()
+//                }
+//                Log.i(TAG, "✅ Resposta de escrita enviada")
+//            } else {
+//                if (responseNeeded) {
+//                    gattServer.sendResponse(
+//                        device,
+//                        requestId,
+//                        BluetoothGatt.GATT_FAILURE,
+//                        offset,
+//                        null
+//                    )
+//                }
+//            }
+//        }
+//    }
+//
+//    // --- GATT Client (Papel Central) ---
+//
+//    // Callback para conexões como central (quando o Android se conecta a outro dispositivo)
+//    private val gattClientCallback = object : BluetoothGattCallback() {
+//        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+//            val deviceAddress = gatt.device.address
+//            if (newState == BluetoothProfile.STATE_CONNECTED) {
+//                Log.d(TAG, "GATT Client - Conectado a ${gatt.device.name} ($deviceAddress)")
+//                gattClients[deviceAddress] = gatt
+//                gatt.discoverServices()
+//            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+//                Log.d(TAG, "GATT Client - Desconectado de ${gatt.device.name} ($deviceAddress)")
+//                connectedDevices.remove(deviceAddress)
+//                discoveredDevices.remove(gatt.device)
+//                disconnectedDevices.add(gatt.device)
+//                gattClients.remove(deviceAddress)
+//                startReconnectionAttempts(gatt.device)
+//            }
+//        }
+//
+//        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+//            if (status == BluetoothGatt.GATT_SUCCESS) {
+//                val service = gatt.services.find { it.uuid == serviceUUID.uuid }
+//                if (service != null) {
+//                    val characteristic = service.getCharacteristic(characteristicUUID)
+//                    if (characteristic != null) {
+//                        // --- Equivalente ao didDiscoverCharacteristicsFor ---
+//                        Log.d(TAG, "🔍 Característica descoberta: ${characteristic.uuid}")
+//                        // Habilita notificações para essa característica
+//                        gatt.setCharacteristicNotification(characteristic, true)
+//                        // Envia o próprio ID para o dispositivo conectado
+//                        val data = localDeviceID.toByteArray(Charsets.UTF_8)
+//                        characteristic.value = data
+//                        val writeSuccess = gatt.writeCharacteristic(characteristic)
+//                        Log.d(
+//                            TAG,
+//                            "📤 Enviando ID para o dispositivo conectado: $localDeviceID, sucesso: $writeSuccess"
+//                        )
+//                        // Registra o dispositivo como conectado
+//                        connectedDevices[gatt.device.address] = localDeviceID
+//                    }
+//                }
+//            } else {
+//                Log.e(TAG, "❌ Erro ao descobrir serviços: status $status")
+//            }
+//        }
+//
+//        override fun onCharacteristicChanged(
+//            gatt: BluetoothGatt,
+//            characteristic: BluetoothGattCharacteristic
+//        ) {
+//            // --- Equivalente ao didUpdateValueFor ---
+//            val data = characteristic.value
+//            if (data == null) {
+//                Log.e(TAG, "❌ Erro: Característica sem dados")
+//                return
+//            }
+//            val remoteDeviceID = String(data, Charsets.UTF_8)
+//            // Verifica se o ID recebido é válido e se já não está conectado
+//            if (remoteDeviceID.isEmpty() || connectedDevices.values.contains(remoteDeviceID)) {
+//                stopScanning()
+//                startAdvertising()
+//                Log.e(TAG, "⚠️ Dados inválidos ou dispositivo já conectado")
+//                return
+//            }
+//            Log.d(TAG, "📥 Dados recebidos: $remoteDeviceID")
+//            stopScanning()
+//            startAdvertising()
+//            Log.i(TAG, "📣 Parando de scanear e começando a anunciar")
+//            // Atualiza a lista de dispositivos conectados
+//            connectedDevices[gatt.device.address] = remoteDeviceID
+//            // Envia a confirmação "CONNECTED" de volta
+//            characteristic.value = "CONNECTED".toByteArray(Charsets.UTF_8)
+//            val writeSuccess = gatt.writeCharacteristic(characteristic)
+//            Log.d(TAG, "GATT Client - Escrevendo 'CONNECTED', sucesso: $writeSuccess")
+//            // Após um breve delay, notifica a camada de serviço em tempo real (se aplicável)
+//            handler.postDelayed({
+//                Log.d(TAG, "Conectando ao dispositivo remoto: $remoteDeviceID")
+//                // Exemplo: realTimeService?.connect(to = remoteDeviceID)
+//            }, 300)
+//        }
+//
+//        override fun onCharacteristicWrite(
+//            gatt: BluetoothGatt,
+//            characteristic: BluetoothGattCharacteristic,
+//            status: Int
+//        ) {
+//            if (status == BluetoothGatt.GATT_SUCCESS) {
+//                Log.d(TAG, "GATT Client - Escrita realizada com sucesso em ${gatt.device.address}")
+//            } else {
+//                Log.e(
+//                    TAG,
+//                    "GATT Client - Erro ao escrever em ${gatt.device.address}, status: $status"
+//                )
+//            }
+//        }
+//    }
+//
+//    // --- Advertising e Escaneamento ---
+//
+//    // Callback para Advertising (periférico)
+//    private val advertiseCallback = object : AdvertiseCallback() {
+//        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+//            Log.d(TAG, "Advertising iniciado com sucesso")
+//        }
+//
+//        override fun onStartFailure(errorCode: Int) {
+//            Log.e(TAG, "Advertising falhou com o código: $errorCode")
+//        }
+//    }
+//
+//    // Callback para escaneamento (central)
+//    private val scanCallback = object : ScanCallback() {
+//        override fun onScanResult(callbackType: Int, result: ScanResult) {
+//            val device = result.device
+//            if (device != null && !discoveredDevices.contains(device)) {
+//                discoveredDevices.add(device)
+//                Log.d(
+//                    TAG,
+//                    "Dispositivo descoberto: ${device.name ?: "Desconhecido"} - ${device.address}"
+//                )
+//                // Tenta conectar ao dispositivo como central
+//                device.connectGatt(context, false, gattClientCallback)
+//            }
+//        }
+//
+//        override fun onBatchScanResults(results: MutableList<ScanResult>) {
+//            results.forEach { result ->
+//                val device = result.device
+//                if (!discoveredDevices.contains(device)) {
+//                    discoveredDevices.add(device)
+//                    Log.d(
+//                        TAG,
+//                        "Dispositivo (batch) descoberto: ${device.name ?: "Desconhecido"} - ${device.address}"
+//                    )
+//                    device.connectGatt(context, false, gattClientCallback)
+//                }
+//            }
+//        }
+//
+//        override fun onScanFailed(errorCode: Int) {
+//            Log.e(TAG, "Falha no escaneamento com código: $errorCode")
+//        }
+//    }
+//
+//    /**
+//     * Inicializa o GATT Server adicionando o serviço e a característica.
+//     */
+//    fun initializeGattServer() {
+//        val service = BluetoothGattService(
+//            serviceUUID.uuid,
+//            BluetoothGattService.SERVICE_TYPE_PRIMARY
+//        )
+//
+//        val properties = BluetoothGattCharacteristic.PROPERTY_READ or
+//                BluetoothGattCharacteristic.PROPERTY_WRITE or
+//                BluetoothGattCharacteristic.PROPERTY_NOTIFY
+//        val permissions = BluetoothGattCharacteristic.PERMISSION_READ or
+//                BluetoothGattCharacteristic.PERMISSION_WRITE
+//
+//        val characteristic =
+//            BluetoothGattCharacteristic(characteristicUUID, properties, permissions)
+//
+//        // Descriptor para habilitar notificações
+//        val configDescriptor = BluetoothGattDescriptor(
+//            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
+//            BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+//        )
+//        characteristic.addDescriptor(configDescriptor)
+//        service.addCharacteristic(characteristic)
+//
+//        val serviceAdded = gattServer.addService(service)
+//        Log.d(TAG, "GATT service adicionado: $serviceAdded")
+//    }
+//
+//    /**
+//     * Inicializa o Bluetooth: verifica permissões, estado e configura o GATT Server.
+//     */
+//    fun initializeBluetooth() {
+//        if (!hasBluetoothPermissions()) {
+//            Log.e(TAG, "Permissões Bluetooth não concedidas")
+//            return
+//        }
+//        if (!isBluetoothEnabled()) {
+//            Log.e(TAG, "Bluetooth está desativado")
+//            return
+//        }
+//        Log.d(TAG, "Bluetooth pronto para uso")
+//        // Configura o nome do dispositivo para nosso ID
+//        bluetoothAdapter?.name = localDeviceID.formattedDeviceID
+//        initializeGattServer()
+//    }
+//
+//    /**
+//     * Inicia o escaneamento de dispositivos BLE.
+//     */
+//    fun startScanning() {
+//        if (!isBluetoothEnabled() || !hasBluetoothPermissions()) {
+//            Log.e(TAG, "Bluetooth desligado ou sem permissões")
+//            return
+//        }
+//        if (isScanning) {
+//            Log.w(TAG, "Escaneamento já está em andamento")
+//            return
+//        }
+//        discoveredDevices.clear()
+//        isScanning = true
+//
+//        val scanFilters = listOf<ScanFilter>() // Adicione filtros se necessário
+//        val scanSettings = ScanSettings.Builder()
+//            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+//            .build()
+//        bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
+//        Log.d(TAG, "Escaneamento BLE iniciado")
+//        handler.postDelayed({ stopScanning() }, scanPeriod)
+//    }
+//
+//    /**
+//     * Para o escaneamento de dispositivos BLE.
+//     */
+//    fun stopScanning() {
+//        if (isScanning) {
+//            bluetoothLeScanner?.stopScan(scanCallback)
+//            isScanning = false
+//            Log.d(TAG, "Escaneamento BLE parado")
+//        }
+//    }
+//
+//    /**
+//     * Inicia o advertising BLE.
+//     */
+//    fun startAdvertising() {
+//        if (!isBluetoothEnabled()) {
+//            Log.d(TAG, "Bluetooth não está ativo para advertising")
+//            return
+//        }
+//        val settings = AdvertiseSettings.Builder()
+//            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+//            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_LOW)
+//            .setConnectable(true)
+//            .build()
+//        val advertiseData = AdvertiseData.Builder()
+//            .setIncludeDeviceName(true)
+//            .addServiceUuid(serviceUUID)
+//            .build()
+//        bluetoothAdvertiser?.startAdvertising(settings, advertiseData, advertiseCallback)
+//        Log.d(TAG, "Advertising iniciado com o ID: $localDeviceID")
+//    }
+//
+//    /**
+//     * Para o advertising BLE.
+//     */
+//    fun stopAdvertising() {
+//        bluetoothAdvertiser?.stopAdvertising(advertiseCallback)
+//        Log.d(TAG, "Advertising parado")
+//    }
+//
+//    /**
+//     * Desconecta todos os dispositivos conectados.
+//     */
+//    fun disconnectAll() {
+//        discoveredDevices.forEach { device ->
+//            gattClients[device.address]?.disconnect()
+//            connectedDevices.remove(device.address)
+//        }
+//        discoveredDevices.clear()
+//        Log.d(TAG, "Todos os dispositivos foram desconectados")
+//    }
+//
+//    /**
+//     * Tenta reconectar a um dispositivo desconectado, com tentativas limitadas.
+//     */
+//    private fun startReconnectionAttempts(device: BluetoothDevice) {
+//        val deviceId = device.address
+//        currentRetries[deviceId] = 0
+//        reconnectionTimer?.cancel()
+//        reconnectionTimer = Timer()
+//        reconnectionTimer?.scheduleAtFixedRate(object : TimerTask() {
+//            override fun run() {
+//                val attempts = currentRetries[deviceId] ?: 0
+//                if (attempts < maxRetries) {
+//                    Log.d(
+//                        TAG,
+//                        "Tentativa ${attempts + 1} de reconexão para ${device.name ?: "Desconhecido"}"
+//                    )
+//                    currentRetries[deviceId] = attempts + 1
+//                    device.connectGatt(context, false, gattClientCallback)
+//                } else {
+//                    Log.d(
+//                        TAG,
+//                        "Máximo de tentativas atingido para ${device.name ?: "Desconhecido"}"
+//                    )
+//                    currentRetries.remove(deviceId)
+//                    reconnectionTimer?.cancel()
+//                    reconnectionTimer = null
+//                    if (connectedDevices.isEmpty()) {
+//                        stopScanning()
+//                        startAdvertising()
+//                    }
+//                }
+//            }
+//        }, 0, retryInterval)
+//    }
+//
+//    /**
+//     * Verifica se o Bluetooth está ativo.
+//     */
+//    fun isBluetoothEnabled(): Boolean {
+//        return bluetoothAdapter?.isEnabled == true
+//    }
+//
+//    /**
+//     * Verifica se as permissões necessárias estão concedidas.
+//     */
+//    fun hasBluetoothPermissions(): Boolean {
+//        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+//            arrayOf(
+//                Manifest.permission.BLUETOOTH_SCAN,
+//                Manifest.permission.BLUETOOTH_CONNECT,
+//                Manifest.permission.BLUETOOTH_ADVERTISE
+//            )
+//        } else {
+//            arrayOf(
+//                Manifest.permission.BLUETOOTH,
+//                Manifest.permission.BLUETOOTH_ADMIN,
+//                Manifest.permission.ACCESS_FINE_LOCATION
+//            )
+//        }
+//        return requiredPermissions.all {
+//            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+//        }
+//    }
+//
+//    companion object {
+//        private const val TAG = "BluetoothService"
+//    }
+//}
 
 
 //class BluetoothService(
