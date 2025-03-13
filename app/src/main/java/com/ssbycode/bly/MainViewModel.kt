@@ -31,14 +31,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Inicializa os serviços
         signalingService = FirebaseManager(localDeviceID = localDeviceID)
 
-        bluetoothService = BluetoothService(
-            context = context,
-            localDeviceID = localDeviceID
-        )
-
         realTimeService = RealTimeService(
             context = context,
             signalingService = signalingService,
+            localDeviceID = localDeviceID
+        )
+
+        bluetoothService = BluetoothService(
+            context = context,
+            realTimeService = realTimeService,
             localDeviceID = localDeviceID
         )
 
